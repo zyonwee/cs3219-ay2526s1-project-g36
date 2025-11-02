@@ -13,10 +13,12 @@ export type SessionState = {
 
 const SNAPSHOT_PREFIX = 'snapshot:';
 const UPDATE_PREFIX = 'update:';
+const HISTORY_PREFIX = 'history:';
 
 const SNAPSHOT_INTERVAL_MS = 30000; // 30 seconds
 const OPERATIONS_THRESHOLD = 200;
 const PRUNE_THRESHOLD_MS = 60000; // 1 minute
+const MAX_SNIPPET_LENGTH = 120;
 
 function updateKey(sessionId: string, timestamp: number) {
   const random = Math.random().toString(36).slice(2, 8);
@@ -27,6 +29,25 @@ function updateKey(sessionId: string, timestamp: number) {
 function updateRange(sessionId: string) {
   const base = `${UPDATE_PREFIX}${sessionId}:`;
   return { gte: base, lt: base + '\xFF' };
+}
+
+function historyRange(sessionId: string) {
+  const base = `${HISTORY_PREFIX}${sessionId}:`;
+  return { gte: base, lt: base + '\xFF' };
+}
+
+function findSnippetLocation(text: string, offset: number) {
+  let line = 1,
+    col = 1;
+  for (let i = 0; i < offset && i < text.length; i++) {
+    if (text[i] === '\n') {
+      line++;
+      col = 1;
+    } else {
+      col++;
+    }
+  }
+  return { line, col };
 }
 
 @Injectable()
