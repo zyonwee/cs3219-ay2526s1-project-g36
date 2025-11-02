@@ -1,84 +1,76 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useState, useEffect } from "react";
 import { getSession, logout } from "../../../../lib/auth";
-import CollabTextArea from "../../components/room/CollabTextArea";
-import { Session } from "@supabase/supabase-js";
 import { useRouter } from "next/navigation";
 import { useRequireAuth } from "../../../../lib/useRequireAuth";
+import ProblemTitle from "../../components/room/ProblemTitle";
+import CodeEditorPanel from "../../components/room/CodeEditorPanel";
+import CommentPanel from "../../components/room/CommentPanel";
+import ChatPanel from "../../components/room/ChatPanel";
+import { Session } from "@supabase/supabase-js";
 
 type Props = {
-    params: Promise<{ roomId: string }>;
+  params: Promise<{ roomId: string }>;
 };
 
 export default function RoomPage({ params }: Props) {
-    const ok = useRequireAuth();
+  const { roomId } = use(params);
+  const ok = useRequireAuth();
+  const router = useRouter();
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
 
-    const { roomId } = use(params);
-    const router = useRouter();
-    const [session, setSession] = useState<Session | null>(null);
-    const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    if (!ok) return;
 
-    useEffect(() => {
-        if (!ok) {
-            return;
-        }
-        let cancelled = false;
-
-        const fetchData = async () => {
-            const fetchedSession = await getSession();
-            if (!fetchedSession) {
-                throw new Error("Unable to fetch session");
-            }
-            setSession(fetchedSession);
-            setLoading(false);
-        };
-        fetchData();
-        return () => {
-            cancelled = true;
-        };
-    }, [ok, roomId]);
-
-    if (!ok || loading) {
-        return <div className="p-8">Loading room...</div>;
-    }
-
-    if (!session) {
-        throw new Error("No session available");
-    }
-
-    const token = session.access_token;
-
-    const handleSignOut = async () => {
-        await logout();
-        router.push("/login");
+    const loadSession = async () => {
+      const s = await getSession();
+      if (!s) throw new Error("Unable to fetch session");
+      setSession(s);
+      setLoading(false);
     };
+    loadSession();
+  }, [ok]);
 
-    return (
-        <main className="p-8">
-            <div className="flex justify-between items-center mb-6">
-                <h1 className="text-3xl font-bold">Collaboration Room</h1>
-                <button
-                    onClick={handleSignOut}
-                    className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded"
-                >
-                    Sign Out (Debug)
-                </button>
+  if (!ok || loading) return <div className="p-8">Loading room...</div>;
+
+  const token = session?.access_token;
+
+  const handleLeave = async () => {
+    await logout();
+    router.push("/login");
+  };
+
+  return (
+    <main className="p-8">
+      {/* Header Section */}
+      <div className="flex justify-between items-center mb-6">
+        <ProblemTitle
+          title="Reverse Linked List"
+          description="Implement a function that reverses a linked list."
+          difficulty="Medium"
+          acceptanceRate="62%"
+        />
+        {/* <LeaveButton onClick={handleLeave} /> */}
+      </div>
+
+      {/* Panels Section */}
+      <div className="flex flex-row gap-6 h-[80vh]">
+        {token && (
+          <>
+            <div className="flex-1">
+              <CodeEditorPanel roomId={roomId} token={token} />
             </div>
-            <p className="text-gray-700 mb-4">
-                You are in room: <span className="font-mono">{roomId}</span>
-            </p>
-
-            <div className="grid grid-cols-2 gap-6">
-                <section className="border p-4 rounded-lg">
-                    <h2 className="font-semibold mb-2">Problem</h2>
-                    <p className="text-sm text-gray-600">
-                        Implement a function that reverses a linked list.
-                    </p>
-                </section>
-
-                <CollabTextArea roomId={roomId} token={token} />
+            <div className="flex-1 max-w-[400px]">
+              <CommentPanel roomId={roomId} token={token} />
             </div>
-        </main>
-    );
+            <div className="flex-1 max-w-[400px]">
+              <ChatPanel />
+            </div>
+          </>
+        )}
+      </div>
+    </main>
+  );
 }
