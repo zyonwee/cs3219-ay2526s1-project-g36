@@ -196,13 +196,13 @@ export default function CollabTextArea({ roomId, token }: RoomProps) {
     };
 
     return (
-        <div className="grid grid-cols-2 gap-6">
-            <div className="border p-4 rounded-lg">
-                <h2 className="font-semibold mb-2">Editor</h2>
+        <div className="flex flex-col gap-6 h-full min-h-0">
+            <div className="border p-4 rounded-lg flex flex-col min-h-0 flex-1">
+                <h2 className="font-semibold mb-2 flex-shrink-0">Editor</h2>
                 <textarea
                     ref={textAreaRef}
                     placeholder="Write your code here..."
-                    className="w-full h-64 border rounded-lg p-2 font-mono"
+                    className="w-full flex-1 min-h-0 border rounded-lg p-2 font-mono resize-none"
                     onInput={onInput}
                     onCompositionStart={() => {
                         composingRef.current = true;
@@ -212,7 +212,7 @@ export default function CollabTextArea({ roomId, token }: RoomProps) {
                         onInput();
                     }}
                 />
-                <div className="text-xs text-gray-500 mt-2 flex justify-between">
+                <div className="text-xs text-gray-500 mt-2 flex justify-between flex-shrink-0">
                     <span>
                         Session: <code>{roomId}</code>
                         <br />
@@ -221,33 +221,37 @@ export default function CollabTextArea({ roomId, token }: RoomProps) {
                 </div>
             </div>
 
-            <div className="border p-4 rounded-lg overflow-y-auto h-72">
-                <h2 className="font-semibold mb-2">Edit History</h2>
-                {history.length === 0 ? (
-                    <p className="text-sm text-gray-500">No edits yet.</p>
-                ) : (
-                    <ul className="text-sm space-y-2">
-                        {history.map((record, i) => (
-                            <li key={i} className="border-b pb-1">
-                                <div className="text-xs text-gray-500">
-                                    <strong>{record.userId}</strong> •{" "}
-                                    {formatRelativeTime(record.timestamp)}
-                                </div>
-                                {record.changes.map(
-                                    (change: any, j: number) => (
-                                        <div key={j} className="ml-2">
-                                            {change.type === "insert"
-                                                ? "➕"
-                                                : "➖"}{" "}
-                                            L{change.line}:C{change.col} →{" "}
-                                            <code>{change.snippet}</code>
-                                        </div>
-                                    )
-                                )}
-                            </li>
-                        ))}
-                    </ul>
-                )}
+            <div className="border p-4 rounded-lg flex flex-col overflow-hidden min-h-0 flex-1">
+                <h2 className="font-semibold mb-2 flex-shrink-0">
+                    Edit History
+                </h2>
+                <div className="flex-1 overflow-y-auto min-h-0">
+                    {history.length === 0 ? (
+                        <p className="text-sm text-gray-500">No edits yet.</p>
+                    ) : (
+                        <ul className="text-sm space-y-2">
+                            {history.map((record, i) => (
+                                <li key={i} className="border-b pb-1">
+                                    <div className="text-xs text-gray-500">
+                                        <strong>{record.userId}</strong> •{" "}
+                                        {formatRelativeTime(record.timestamp)}
+                                    </div>
+                                    {record.changes.map(
+                                        (change: any, j: number) => (
+                                            <div key={j} className="ml-2">
+                                                {change.type === "insert"
+                                                    ? "➕"
+                                                    : "➖"}{" "}
+                                                L{change.line}:C{change.col} →{" "}
+                                                <code>{change.snippet}</code>
+                                            </div>
+                                        )
+                                    )}
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </div>
             </div>
         </div>
     );
