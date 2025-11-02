@@ -1,164 +1,163 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback } from "react";
-import "./CodeEditorPanel.css";
+import { useEffect, useRef, useState } from "react";
+import { Editor } from "@monaco-editor/react";
 import { useCollaborativeDoc } from "../../../../hooks/useCollaborativeDoc";
-import languages from "../../../../utils/syntax";
+import { useTheme } from "../../../../context/ThemeContext";
+import { CODE_SNIPPETS } from "./constants"; 
 
 type Props = {
   roomId: string;
   token: string;
 };
 
-function escapeHTML(str: string) {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-function escapeRegExp(s: string) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function highlightSyntaxSafe(
-  text: string,
-  lang: {
-    keywords: string[];
-    commentPattern: RegExp;
-    stringPatterns?: RegExp[];
-  }
-) {
-  if (!lang) return escapeHTML(text);
-
-  const src = escapeHTML(text);
-  const stringSources = (lang.stringPatterns || []).map((p) => p.source).filter(Boolean);
-  const stringAlt = stringSources.length ? `(${stringSources.join("|")})` : null;
-  const commentSource = lang.commentPattern.source;
-  const keywordAlt = lang.keywords.length
-    ? `(${lang.keywords.map(escapeRegExp).join("|")})`
-    : null;
-
-  const parts: string[] = [];
-  if (stringAlt) parts.push(stringAlt);
-  if (commentSource) parts.push(`(${commentSource})`);
-  if (keywordAlt) parts.push(`\\b${keywordAlt}\\b`);
-
-  const combined = new RegExp(parts.join("|"), "g");
-
-  const stringTest = stringAlt ? new RegExp(`^${stringAlt}$`) : null;
-  const commentTest = new RegExp(`^${commentSource}$`);
-  const keywordTest = keywordAlt ? new RegExp(`^\\b${keywordAlt}\\b$`) : null;
-
-  return src.replace(combined, (match) => {
-    if (stringTest && stringTest.test(match)) return `<span class="ce-string">${match}</span>`;
-    if (commentTest.test(match)) return `<span class="ce-comment">${match}</span>`;
-    if (keywordTest && keywordTest.test(match)) return `<span class="ce-keyword">${match}</span>`;
-    return match;
-  });
-}
-
 export default function CodeEditorPanel({ roomId, token }: Props) {
+  const { theme } = useTheme();
   const { content, updateContent, status } = useCollaborativeDoc(roomId, token, "code");
-  const [language, setLanguage] = useState<string>(Object.keys(languages)[0] || "Java");
+  const editorRef = useRef<any>(null);
 
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const preRef = useRef<HTMLPreElement | null>(null);
-  const gutterRef = useRef<HTMLDivElement | null>(null);
+  // Language selection
+  const [language, setLanguage] = useState("python");
 
-  const lines = (content || "").split("\n");
-  const lineCount = Math.max(1, lines.length);
-  const highlightedHtml = highlightSyntaxSafe(content ?? "", languages[language]);
+  /** 🧩 Mount Monaco Editor */
+  const handleEditorMount = (editor: any, monaco: any) => {
+    editorRef.current = editor;
+    (window as any).monaco = monaco;
 
-  // Scroll sync logic
-  const onScroll = useCallback(() => {
-    const ta = textareaRef.current;
-    const pre = preRef.current;
-    const gutter = gutterRef.current;
-    if (!ta || !pre || !gutter) return;
-    pre.scrollTop = ta.scrollTop;
-    pre.scrollLeft = ta.scrollLeft;
-    gutter.scrollTop = ta.scrollTop;
-  }, []);
+    // 🎨 Define Monaco theme dynamically
+    monaco.editor.defineTheme("customTheme", {
+      base: theme.id === "dark" ? "vs-dark" : "vs",
+      inherit: true,
+      rules: [
+        {
+          token: "",
+          foreground: theme.text.replace("#", ""),
+          background: theme.surface.replace("#", ""),
+        },
+      ],
+      colors: {
+        "editor.background": theme.surface,
+        "editor.foreground": theme.text,
+        "editorCursor.foreground": theme.accent,
+        "editorLineNumber.foreground": theme.textSecondary,
+        "editorLineNumber.activeForeground": theme.accent,
+        "editor.selectionBackground": "#264F78",
+        "editor.inactiveSelectionBackground": "#3A3D41",
+        "editorIndentGuide.background": theme.border,
+        "editorIndentGuide.activeBackground": theme.accent,
+        "editorLineHighlightBackground":
+          theme.id === "dark" ? "#1E1E1E30" : "#EAEAEA80",
+      },
+    });
 
-  useEffect(() => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    ta.addEventListener("scroll", onScroll, { passive: true });
-    return () => ta.removeEventListener("scroll", onScroll);
-  }, [onScroll]);
-
-  useEffect(() => {
-    const ta = textareaRef.current;
-    const pre = preRef.current;
-    const gutter = gutterRef.current;
-    if (!ta || !pre || !gutter) return;
-    pre.scrollTop = ta.scrollTop;
-    pre.scrollLeft = ta.scrollLeft;
-    gutter.scrollTop = ta.scrollTop;
-  }, [content, language]);
-
-  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    updateContent(e.target.value);
+    monaco.editor.setTheme("customTheme");
   };
 
+  /** Update theme dynamically */
   useEffect(() => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    try {
-      const start = ta.selectionStart;
-      const end = ta.selectionEnd;
-      ta.setSelectionRange(start, end);
-    } catch {}
+    if ((window as any).monaco) {
+      (window as any).monaco.editor.setTheme("customTheme");
+    }
+  }, [theme]);
+
+  /** Sync backend → Monaco */
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || content === undefined) return;
+    const model = editor.getModel();
+    if (model && model.getValue() !== content) {
+      model.setValue(content);
+    }
   }, [content]);
 
+  /** Sync Monaco → backend */
+  const handleEditorChange = (value: string | undefined) => {
+    if (value !== undefined) updateContent(value);
+  };
+
+  /** Update code snippet when language changes */
+  useEffect(() => {
+    const snippet = CODE_SNIPPETS[language as keyof typeof CODE_SNIPPETS];
+    if (snippet) {
+      updateContent(snippet);
+    }
+  }, [language]); // only runs when language changes
+
   return (
-    <div className="ce-container" role="region" aria-label="Code editor">
-      <div className="ce-header">
-        <div className="ce-title">Code Editor</div>
-        <div className="ce-controls">
-          <select
-            className="ce-lang-select"
-            value={language}
-            onChange={(e) => setLanguage(e.target.value)}
-          >
-            {Object.keys(languages).map((k) => (
-              <option key={k} value={k}>
-                {k}
-              </option>
-            ))}
-          </select>
-        </div>
+    <div
+      style={{
+        height: "100%",
+        width: "100%",
+        backgroundColor: theme.surface,
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
+      {/* Top Bar */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          padding: "6px 12px",
+          backgroundColor: theme.background,
+          borderBottom: `1px solid ${theme.border}`,
+        }}
+      >
+        {/* Language Selector */}
+        <select
+          value={language}
+          onChange={(e) => setLanguage(e.target.value)}
+          style={{
+            backgroundColor: theme.input.background,
+            color: theme.input.text,
+            border: `1px solid ${theme.input.border}`,
+            padding: "4px 8px",
+            borderRadius: "6px",
+            fontSize: "0.9rem",
+          }}
+        >
+          <option value="python">Python</option>
+          <option value="javascript">JavaScript</option>
+          <option value="cpp">C++</option>
+          <option value="java">Java</option>
+          <option value="c">C</option>
+        </select>
+
+        {/* 🔌 Connection Status */}
+        <span
+          style={{
+            fontSize: "0.85rem",
+            color: theme.textSecondary,
+          }}
+        >
+          {status === "connected"
+            ? "🟢 Connected"
+            : status === "connecting"
+            ? "🟡 Connecting..."
+            : "🔴 Disconnected"}
+        </span>
       </div>
 
-      <div className="ce-body">
-        <div className="ce-gutter" ref={gutterRef} aria-hidden>
-          {Array.from({ length: lineCount }, (_, i) => (
-            <div className="ce-line-number" key={i}>
-              {i + 1}
-            </div>
-          ))}
-        </div>
-
-        <div className="ce-editor-wrapper">
-          <pre
-            className="ce-highlight"
-            ref={preRef}
-            aria-hidden
-            dangerouslySetInnerHTML={{ __html: highlightedHtml || " " }}
-          />
-          <textarea
-            ref={textareaRef}
-            className="ce-textarea"
-            value={content ?? ""}
-            onChange={handleChange}
-            spellCheck={false}
-          />
-        </div>
-      </div>
-
-      <div className="ce-footer">
-        <div className="ce-status">Connection: {status}</div>
+      {/* Monaco Editor */}
+      <div style={{ flexGrow: 1 }}>
+        <Editor
+          height="100%"
+          language={language}
+          value={content}
+          onChange={handleEditorChange}
+          onMount={handleEditorMount}
+          options={{
+            theme: "customTheme",
+            automaticLayout: true,
+            minimap: { enabled: false },
+            fontSize: 14,
+            padding: { top: 10 },
+            scrollBeyondLastLine: false,
+            lineNumbers: "on",
+            smoothScrolling: true,
+          }}
+        />
       </div>
     </div>
   );
