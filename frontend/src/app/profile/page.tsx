@@ -7,6 +7,7 @@ import TopNavBar from "../components/navbar/TopNavBar";
 import ProfileForm from "../components/profile/ProfileForm";
 import QuestionHistory from "../components/profile/QuestionHistory";
 import { useTheme } from "../../../context/ThemeContext";
+import { useRequireAuth } from '../../../lib/useRequireAuth';
 
 type Profile = {
   id: string;
@@ -17,6 +18,9 @@ type Profile = {
 };
 
 export default function ProfilePage() {
+  // use hooks to implement is logged in guard
+  const ok = useRequireAuth();
+  
   const { theme } = useTheme();
 
   const [username, setUsername] = useState("");
@@ -96,6 +100,12 @@ export default function ProfilePage() {
       "",
     [firstName, lastName, email]
   );
+
+  if (!ok) {
+    return <div className="flex h-screen items-center justify-center">
+      <span className="animate-spin rounded-full h-8 w-8 border-4 border-gray-300 border-t-blue-600" />
+      </div>;
+  }
 
   return (
     <main
