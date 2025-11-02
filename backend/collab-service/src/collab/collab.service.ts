@@ -2,6 +2,7 @@ import * as Y from 'yjs';
 import { Awareness } from 'y-protocols/awareness';
 import { Injectable, Logger } from '@nestjs/common';
 import { ClassicLevel } from 'classic-level';
+import { time } from 'console';
 
 export type SessionState = {
   doc: Y.Doc;
@@ -9,6 +10,19 @@ export type SessionState = {
   numberOfOperations: number;
   lastSnapshotAt: number;
   isLoadedFromDB: boolean;
+};
+
+type Change = {
+  type: 'insert' | 'delete';
+  line: number;
+  col: number;
+  snippet: string;
+};
+
+type EditHistoryRecord = {
+  userId: string;
+  timestamp: number;
+  changes: Change[];
 };
 
 const SNAPSHOT_PREFIX = 'snapshot:';
@@ -31,9 +45,9 @@ function updateRange(sessionId: string) {
   return { gte: base, lt: base + '\xFF' };
 }
 
-function historyRange(sessionId: string) {
+function historyRange(sessionId: string, limit = 50) {
   const base = `${HISTORY_PREFIX}${sessionId}:`;
-  return { gte: base, lt: base + '\xFF' };
+  return { gte: base, lt: base + '\xFF', reverse: true, limit: limit };
 }
 
 function findSnippetLocation(text: string, offset: number) {
@@ -124,13 +138,74 @@ export class CollabService {
     );
   }
 
-  async applyAndPersistUpdate(sessionId: string, update: Uint8Array) {
+  async applyAndPersistUpdate(
+    sessionId: string,
+    update: Uint8Array,
+    userId: string,
+  ) {
     const session = await this.getOrLoadSession(sessionId);
-    Y.applyUpdate(session.doc, update);
+    const currentText = session.doc.getText('content');
+
+    const beforeUpdateText = currentText.toString();
+    let change: Array<any> | null = null;
+
+    // Observe changes to capture the diff when this update is applied
+    const capture = (event: Y.YTextEvent) => {
+      change = event.delta as Array<any>;
+    };
+    currentText.observe(capture);
+    try {
+      Y.applyUpdate(session.doc, update);
+    } finally {
+      currentText.unobserve(capture);
+    }
 
     // Append update to the database
     const key = updateKey(sessionId, Date.now());
     await this.db.put(key, update);
+
+    // Record edit history if we captured a change
+    if (change) {
+      const changes: Change[] = [];
+      let offset = 0;
+      for (const operation of change) {
+        if (operation.retain) {
+          offset += operation.retain;
+        } else if (typeof operation.insert === 'string') {
+          const snippet = operation.insert.slice(0, MAX_SNIPPET_LENGTH);
+          const { line, col } = findSnippetLocation(beforeUpdateText, offset);
+          changes.push({
+            type: 'insert',
+            line,
+            col,
+            snippet,
+          });
+        } else if (operation.delete) {
+          const removed = beforeUpdateText
+            .slice(offset, offset + operation.delete)
+            .slice(0, MAX_SNIPPET_LENGTH); // get snippet of deleted text
+          const { line, col } = findSnippetLocation(beforeUpdateText, offset);
+          changes.push({
+            type: 'delete',
+            line,
+            col,
+            snippet: removed,
+          });
+          offset += operation.delete;
+        }
+      }
+
+      const historyKey = `${HISTORY_PREFIX}${sessionId}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+      const historyRecord: EditHistoryRecord = {
+        userId,
+        timestamp: Date.now(),
+        changes,
+      };
+      await this.db.put(
+        historyKey,
+        new TextEncoder().encode(JSON.stringify(historyRecord)),
+      );
+    }
 
     session.numberOfOperations++;
     const now = Date.now();
@@ -173,6 +248,25 @@ export class CollabService {
         `Pruned ${toDelete.length} old updates for session ${sessionId}`,
       );
     }
+  }
+
+  async getHistory(
+    sessionId: string,
+    limit: number = 50,
+  ): Promise<EditHistoryRecord[]> {
+    const history: EditHistoryRecord[] = [];
+    for await (const [_, val] of this.db.iterator(
+      historyRange(sessionId, limit),
+    )) {
+      try {
+        history.push(JSON.parse(new TextDecoder().decode(val)));
+      } catch (error) {
+        this.log.error(
+          `Failed to parse history record for session ${sessionId}: ${error}`,
+        );
+      }
+    }
+    return history;
   }
 
   getAwareness(sessionId: string): Promise<Awareness> {
