@@ -83,10 +83,30 @@ export class CollabGateway {
     const update = toUint8(updateData);
 
     // apply to server doc
-    await this.collab.applyAndPersistUpdate(sessionId, update);
+    await this.collab.applyAndPersistUpdate(
+      sessionId,
+      update,
+      client.data.userId,
+    );
 
     // broadcast to other clients in the same session
     client.to('session:' + sessionId).emit('collab:update', update);
+  }
+
+  @SubscribeMessage('collab:history:get')
+  async handleGetHistory(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { limit?: number },
+  ) {
+    const sessionId = client.data.sessionId as string;
+    if (!sessionId) {
+      return;
+    }
+
+    const limit = payload?.limit ?? 50;
+    const history = await this.collab.getHistory(sessionId, limit);
+
+    client.emit('collab:history', history);
   }
 
   @SubscribeMessage('collab:awareness')
