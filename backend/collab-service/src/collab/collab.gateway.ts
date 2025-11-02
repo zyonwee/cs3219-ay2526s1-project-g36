@@ -83,7 +83,7 @@ export class CollabGateway {
     const update = toUint8(updateData);
 
     // apply to server doc
-    await this.collab.applyAndPersistUpdate(
+    const historyRecord = await this.collab.applyAndPersistUpdate(
       sessionId,
       update,
       client.data.userId,
@@ -91,6 +91,12 @@ export class CollabGateway {
 
     // broadcast to other clients in the same session
     client.to('session:' + sessionId).emit('collab:update', update);
+
+    if (historyRecord && historyRecord.changes.length > 0) {
+      client
+        .to('session:' + sessionId)
+        .emit('collab:history:new', historyRecord);
+    }
   }
 
   @SubscribeMessage('collab:history:get')

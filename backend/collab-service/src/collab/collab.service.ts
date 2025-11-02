@@ -145,6 +145,8 @@ export class CollabService {
   ) {
     const session = await this.getOrLoadSession(sessionId);
     const currentText = session.doc.getText('content');
+    let historyRecord: EditHistoryRecord | null = null;
+    const now = Date.now();
 
     const beforeUpdateText = currentText.toString();
     let change: Array<any> | null = null;
@@ -161,7 +163,7 @@ export class CollabService {
     }
 
     // Append update to the database
-    const key = updateKey(sessionId, Date.now());
+    const key = updateKey(sessionId, now);
     await this.db.put(key, update);
 
     // Record edit history if we captured a change
@@ -195,10 +197,10 @@ export class CollabService {
         }
       }
 
-      const historyKey = `${HISTORY_PREFIX}${sessionId}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
-      const historyRecord: EditHistoryRecord = {
+      const historyKey = `${HISTORY_PREFIX}${sessionId}:${now}:${Math.random().toString(36).slice(2, 8)}`;
+      historyRecord = {
         userId,
-        timestamp: Date.now(),
+        timestamp: now,
         changes,
       };
       await this.db.put(
@@ -208,7 +210,6 @@ export class CollabService {
     }
 
     session.numberOfOperations++;
-    const now = Date.now();
     const shouldSnapshot =
       session.numberOfOperations >= OPERATIONS_THRESHOLD ||
       now - session.lastSnapshotAt >= SNAPSHOT_INTERVAL_MS;
@@ -219,6 +220,8 @@ export class CollabService {
       session.lastSnapshotAt = now;
       await this.pruneOldUpdates(sessionId, now - PRUNE_THRESHOLD_MS);
     }
+
+    return historyRecord;
   }
 
   async writeSnapshotToDb(sessionId: string, session: SessionState) {
