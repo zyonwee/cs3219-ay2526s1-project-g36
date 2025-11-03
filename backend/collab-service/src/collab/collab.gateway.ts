@@ -93,7 +93,7 @@ export class CollabGateway {
     client.to('session:' + sessionId).emit('collab:update', update);
 
     if (historyRecord && historyRecord.changes.length > 0) {
-      client
+      this.server
         .to('session:' + sessionId)
         .emit('collab:history:new', historyRecord);
     }
