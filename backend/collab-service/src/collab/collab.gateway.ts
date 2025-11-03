@@ -10,6 +10,8 @@ import { AuthService } from 'src/auth/auth.service';
 import { CollabService } from './collab.service';
 import { toUint8 } from './helpers';
 
+const ALLOWED_LANGUAGES = new Set(['python', 'javascript', 'java', 'cpp', 'c']);
+
 @WebSocketGateway({ namespace: '/collab', transports: ['websocket'] })
 export class CollabGateway {
   constructor(
@@ -50,6 +52,10 @@ export class CollabGateway {
       const state = await this.collab.encodeCurrentState(sessionId);
       client.emit('collab:state', state);
 
+      // send current language to the client
+      const language = await this.collab.getLanguage(sessionId);
+      client.emit('collab:language', { language });
+
       // small emit to confirm connection
       client.emit('collab:connected', { ok: true, userId, sessionId });
     } catch (error) {
@@ -87,6 +93,25 @@ export class CollabGateway {
 
     // broadcast to other clients in the same session
     client.to('session:' + sessionId).emit('collab:update', update);
+  }
+
+  @SubscribeMessage('collab:language:set')
+  handleSetLanguage(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { language: string },
+  ) {
+    const sessionId = client.data.sessionId as string;
+    const language = body.language.toLowerCase();
+    if (!sessionId || !ALLOWED_LANGUAGES.has(language)) {
+      client.emit('collab:error', {
+        ok: false,
+        message: 'Invalid sessionId or unsupported language',
+      });
+      return;
+    }
+    this.collab.setLanguage(sessionId, language);
+
+    client.to('session:' + sessionId).emit('collab:language', { language });
   }
 
   @SubscribeMessage('collab:awareness')

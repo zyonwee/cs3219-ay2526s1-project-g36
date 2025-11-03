@@ -37,7 +37,7 @@ export default function MonacoCollabTextArea({ roomId, token }: RoomProps) {
     const [status, setStatus] = useState<
         "disconnected" | "connecting" | "connected"
     >("disconnected");
-    const [language, setLanguage] = useState("javascript");
+    const [language, setLanguage] = useState("python");
 
     // Socket.IO wiring
     useEffect(() => {
@@ -60,6 +60,16 @@ export default function MonacoCollabTextArea({ roomId, token }: RoomProps) {
         socket.on("collab:update", (data: unknown) =>
             Y.applyUpdate(yDoc, toUint8Array(data))
         );
+        socket.on("collab:language", ({ language: lang }) => {
+            setLanguage((prev) => (prev === lang ? prev : lang));
+
+            const editor = editorRef.current;
+            const monacoNS = monacoNSRef.current;
+            if (!editor || !monacoNS) return;
+
+            const model = editor.getModel();
+            if (model) monacoNS.editor.setModelLanguage(model, lang);
+        });
 
         const onLocalUpdate = (update: Uint8Array) =>
             socket.emit("collab:update", update);
@@ -118,21 +128,24 @@ export default function MonacoCollabTextArea({ roomId, token }: RoomProps) {
                     <select
                         id="lang"
                         value={language}
-                        onChange={(e) => setLanguage(e.target.value)}
+                        onChange={(e) => {
+                            const lang = e.target.value;
+                            // 1) optimistic UI update (prevents flicker/revert)
+                            setLanguage(lang);
+                            // 2) tell the server; its broadcast will keep everyone in sync
+                            socketRef.current?.emit("collab:language:set", {
+                                language: lang,
+                            });
+                        }}
                         className="border rounded px-2 py-1 text-sm"
                     >
-                        {[
-                            "javascript",
-                            "typescript",
-                            "python",
-                            "java",
-                            "cpp",
-                            "csharp",
-                        ].map((l) => (
-                            <option key={l} value={l}>
-                                {l}
-                            </option>
-                        ))}
+                        {["python", "javascript", "java", "cpp", "c"].map(
+                            (l) => (
+                                <option key={l} value={l}>
+                                    {l}
+                                </option>
+                            )
+                        )}
                     </select>
                 </div>
             </div>
@@ -140,7 +153,7 @@ export default function MonacoCollabTextArea({ roomId, token }: RoomProps) {
             <Editor
                 height="500px"
                 theme="vs-dark"
-                defaultLanguage="javascript"
+                defaultLanguage="python"
                 options={{ automaticLayout: true, fontSize: 14 }}
                 onMount={handleMount}
             />
