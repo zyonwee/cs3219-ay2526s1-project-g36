@@ -55,7 +55,7 @@ export class CollabService {
       numberOfOperations: 0,
       lastSnapshotAt: Date.now(),
       isLoadedFromDB: false,
-      language: 'javascript',
+      language: 'python',
     };
   }
 
