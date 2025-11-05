@@ -174,7 +174,10 @@ export default function FindMatchButton({ problem }) {
                 fontSize: 16,
                 cursor: "pointer",
                 boxShadow: "0 6px 18px rgba(0,0,0,0.12)",
+                transition: "background 0.2s"
               }}
+              onMouseEnter={e => e.currentTarget.style.background = theme.accent}
+              onMouseLeave={e => e.currentTarget.style.background = theme.primary}
             >
               Leave Matchmaking
             </button>
