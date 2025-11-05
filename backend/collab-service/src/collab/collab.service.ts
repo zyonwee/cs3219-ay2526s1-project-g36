@@ -10,6 +10,7 @@ export type SessionState = {
   numberOfOperations: number;
   lastSnapshotAt: number;
   isLoadedFromDB: boolean;
+  language: string;
 };
 
 type Change = {
@@ -89,7 +90,18 @@ export class CollabService {
       numberOfOperations: 0,
       lastSnapshotAt: Date.now(),
       isLoadedFromDB: false,
+      language: 'python',
     };
+  }
+
+  async setLanguage(sessionId: string, language: string) {
+    const session = await this.getOrLoadSession(sessionId);
+    session.language = language;
+  }
+
+  async getLanguage(sessionId: string): Promise<string> {
+    const session = await this.getOrLoadSession(sessionId);
+    return session.language;
   }
 
   async getOrLoadSession(sessionId: string): Promise<SessionState> {

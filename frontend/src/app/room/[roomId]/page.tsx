@@ -1,84 +1,147 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { getSession, logout } from "../../../../lib/auth";
-import CollabTextArea from "../../components/room/CollabTextArea";
-import { Session } from "@supabase/supabase-js";
 import { useRouter } from "next/navigation";
 import { useRequireAuth } from "../../../../lib/useRequireAuth";
+import ProblemTitle from "../../components/room/ProblemTitle";
+import CodeEditorPanel from "../../components/room/CodeEditorPanel";
+import CommentPanel from "../../components/room/CommentPanel";
+import MonacoCollabTextArea from "../../components/room/MonacoCollabTextArea";
+import LeaveButton from "../../components/room/LeaveButton";
+import { Session } from "@supabase/supabase-js";
 
 type Props = {
     params: Promise<{ roomId: string }>;
 };
 
 export default function RoomPage({ params }: Props) {
+    const [roomId, setRoomId] = useState<string | null>(null);
     const ok = useRequireAuth();
-
-    const { roomId } = use(params);
     const router = useRouter();
     const [session, setSession] = useState<Session | null>(null);
     const [loading, setLoading] = useState(true);
+    const [dividerX, setDividerX] = useState(60); // %
+    const isDragging = useRef(false);
 
+    // Resolve params safely
     useEffect(() => {
-        if (!ok) {
-            return;
-        }
-        let cancelled = false;
+        (async () => {
+            const resolved = await params;
+            setRoomId(resolved.roomId);
+        })();
+    }, [params]);
 
-        const fetchData = async () => {
-            const fetchedSession = await getSession();
-            if (!fetchedSession) {
-                throw new Error("Unable to fetch session");
-            }
-            setSession(fetchedSession);
+    // Load session
+    useEffect(() => {
+        if (!ok) return;
+
+        const loadSession = async () => {
+            const s = await getSession();
+            if (!s) throw new Error("Unable to fetch session");
+            setSession(s);
             setLoading(false);
         };
-        fetchData();
-        return () => {
-            cancelled = true;
-        };
-    }, [ok, roomId]);
+        loadSession();
+    }, [ok]);
 
-    if (!ok || loading) {
-        return <div className="p-8">Loading room...</div>;
-    }
-
-    if (!session) {
-        throw new Error("No session available");
-    }
-
-    const token = session.access_token;
-
-    const handleSignOut = async () => {
-        await logout();
-        router.push("/login");
+    // Divider drag logic
+    const handleMouseDown = (e: React.MouseEvent) => {
+        e.preventDefault();
+        isDragging.current = true;
+        document.body.style.cursor = "col-resize";
     };
 
+    const handleMouseMove = (e: MouseEvent) => {
+        if (!isDragging.current) return;
+        const container = document.getElementById("resizable-container");
+        if (!container) return;
+        const rect = container.getBoundingClientRect();
+        const offsetX = e.clientX - rect.left;
+        const newWidthPercent = Math.min(
+            80,
+            Math.max(30, (offsetX / rect.width) * 100)
+        );
+        setDividerX(newWidthPercent);
+    };
+
+    const handleMouseUp = () => {
+        isDragging.current = false;
+        document.body.style.cursor = "default";
+    };
+
+    useEffect(() => {
+        window.addEventListener("mousemove", handleMouseMove);
+        window.addEventListener("mouseup", handleMouseUp);
+        return () => {
+            window.removeEventListener("mousemove", handleMouseMove);
+            window.removeEventListener("mouseup", handleMouseUp);
+        };
+    }, []);
+
+    if (!roomId || !ok || loading)
+        return <div className="p-8">Loading room...</div>;
+
+    const token = session?.access_token;
+
     return (
-        <main className="flex flex-col h-screen max-h-screen p-8 overflow-hidden">
-            <div className="flex justify-between items-center mb-6 flex-shrink-0">
-                <h1 className="text-3xl font-bold">Collaboration Room</h1>
-                <button
-                    onClick={handleSignOut}
-                    className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded"
+        <main className="p-8 h-screen flex flex-col overflow-hidden select-none">
+            <div className="flex justify-between items-center mb-6">
+                {/* TODO: Problem metadata display */}
+                <ProblemTitle
+                    title="Reverse Linked List"
+                    description="Implement a function that reverses a linked list."
+                    difficulty="Medium"
+                    acceptanceRate="62%"
+                />
+                <LeaveButton />
+            </div>
+
+            {token && (
+                <div
+                    id="resizable-container"
+                    className="flex flex-row flex-grow overflow-hidden relative"
+                    style={{ minHeight: 0 }}
                 >
-                    Sign Out (Debug)
-                </button>
-            </div>
-            <p className="text-gray-700 mb-4 flex-shrink-0">
-                You are in room: <span className="font-mono">{roomId}</span>
-            </p>
+                    {/* Code Editor Panel */}
+                    <div
+                        className="h-full"
+                        style={{
+                            width: `${dividerX}%`,
+                            minWidth: "300px",
+                            transition: isDragging.current
+                                ? "none"
+                                : "width 0.1s ease-out",
+                        }}
+                    >
+                        <MonacoCollabTextArea roomId={roomId} token={token} />
+                    </div>
 
-            <div className="grid grid-cols-2 gap-6 flex-1 min-h-0">
-                <section className="border p-4 rounded-lg overflow-y-auto min-h-0">
-                    <h2 className="font-semibold mb-2">Problem</h2>
-                    <p className="text-sm text-gray-600">
-                        Implement a function that reverses a linked list.
-                    </p>
-                </section>
+                    {/* Divider */}
+                    <div
+                        onMouseDown={handleMouseDown}
+                        className="cursor-col-resize hover:bg-accent transition-colors"
+                        style={{
+                            width: "6px",
+                            backgroundColor: "rgba(150, 150, 150, 0.3)",
+                            cursor: "col-resize",
+                            zIndex: 10,
+                        }}
+                    ></div>
 
-                <CollabTextArea roomId={roomId} token={token} />
-            </div>
+                    {/* Comment Panel */}
+                    {/* <div
+                        className="grow h-full"
+                        style={{
+                            width: `${100 - dividerX}%`,
+                            minWidth: "250px",
+                            maxHeight: "400px",
+                        }}
+                    >
+                        <CommentPanel roomId={roomId} token={token} />
+                    </div> */}
+                </div>
+            )}
         </main>
     );
 }

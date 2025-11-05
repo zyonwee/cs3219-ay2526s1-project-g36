@@ -1,3 +1,5 @@
+// legacy code for collaborative text area using Yjs and Socket.io, functionality should be transferred to hooks/useCollaborativeDoc.ts
+
 "use client";
 
 import { use, useEffect, useMemo, useRef, useState } from "react";
