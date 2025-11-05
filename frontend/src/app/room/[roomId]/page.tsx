@@ -21,8 +21,6 @@ export default function RoomPage({ params }: Props) {
     const router = useRouter();
     const [session, setSession] = useState<Session | null>(null);
     const [loading, setLoading] = useState(true);
-    const [dividerX, setDividerX] = useState(60); // %
-    const isDragging = useRef(false);
 
     // Resolve params safely
     useEffect(() => {
@@ -45,40 +43,6 @@ export default function RoomPage({ params }: Props) {
         loadSession();
     }, [ok]);
 
-    // Divider drag logic
-    const handleMouseDown = (e: React.MouseEvent) => {
-        e.preventDefault();
-        isDragging.current = true;
-        document.body.style.cursor = "col-resize";
-    };
-
-    const handleMouseMove = (e: MouseEvent) => {
-        if (!isDragging.current) return;
-        const container = document.getElementById("resizable-container");
-        if (!container) return;
-        const rect = container.getBoundingClientRect();
-        const offsetX = e.clientX - rect.left;
-        const newWidthPercent = Math.min(
-            80,
-            Math.max(30, (offsetX / rect.width) * 100)
-        );
-        setDividerX(newWidthPercent);
-    };
-
-    const handleMouseUp = () => {
-        isDragging.current = false;
-        document.body.style.cursor = "default";
-    };
-
-    useEffect(() => {
-        window.addEventListener("mousemove", handleMouseMove);
-        window.addEventListener("mouseup", handleMouseUp);
-        return () => {
-            window.removeEventListener("mousemove", handleMouseMove);
-            window.removeEventListener("mouseup", handleMouseUp);
-        };
-    }, []);
-
     if (!roomId || !ok || loading)
         return <div className="p-8">Loading room...</div>;
 
@@ -98,50 +62,17 @@ export default function RoomPage({ params }: Props) {
             </div>
 
             {token && (
-                <div
-                    id="resizable-container"
-                    className="flex flex-row flex-grow overflow-hidden relative"
-                    style={{ minHeight: 0 }}
-                >
-                    {/* Code Editor Panel */}
-                    <div
-                        className="h-full"
-                        style={{
-                            width: `${dividerX}%`,
-                            minWidth: "300px",
-                            transition: isDragging.current
-                                ? "none"
-                                : "width 0.1s ease-out",
-                        }}
-                    >
-                        <MonacoCollabTextArea roomId={roomId} token={token} />
-                    </div>
-
-                    {/* Divider */}
-                    <div
-                        onMouseDown={handleMouseDown}
-                        className="cursor-col-resize hover:bg-accent transition-colors"
-                        style={{
-                            width: "6px",
-                            backgroundColor: "rgba(150, 150, 150, 0.3)",
-                            cursor: "col-resize",
-                            zIndex: 10,
-                        }}
-                    ></div>
-
-                    {/* Comment Panel */}
-                    {/* <div
-                        className="grow h-full"
-                        style={{
-                            width: `${100 - dividerX}%`,
-                            minWidth: "250px",
-                            maxHeight: "400px",
-                        }}
-                    >
-                        <CommentPanel roomId={roomId} token={token} />
-                    </div> */}
+                <div className="flex-grow overflow-hidden">
+                    <MonacoCollabTextArea roomId={roomId} token={token} />
                 </div>
             )}
+
+            {/* Comment Panel - Kept for potential future use */}
+            {/* {token && (
+                <div className="grow h-full" style={{ minWidth: "250px" }}>
+                    <CommentPanel roomId={roomId} token={token} />
+                </div>
+            )} */}
         </main>
     );
 }
