@@ -20,6 +20,11 @@ export async function getSession() {
   return session; // null if not logged in
 }
 
+export async function getToken() {
+  const session = await getSession();
+  return session?.access_token || null;
+}
+
 // Sign out (replaces mockLogout)
 export async function logout() {
   await supabaseBrowser.auth.signOut();
