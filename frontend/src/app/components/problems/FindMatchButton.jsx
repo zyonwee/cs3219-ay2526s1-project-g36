@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTheme } from "../../../../context/ThemeContext";
 import { useMatching } from "../../../../hooks/useMatching";
 import { getSession } from "../../../../lib/auth";
+import { set } from "lib0/encoding.js";
 
 export default function FindMatchButton({ problem }) {
   const { theme } = useTheme();
@@ -11,6 +12,7 @@ export default function FindMatchButton({ problem }) {
   const [session, setSession] = useState(null);
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [userId, setUserId] = useState(null);
 
   useEffect(() => {
     const fetchSession = async () => {
@@ -20,6 +22,7 @@ export default function FindMatchButton({ problem }) {
         return;
       }
       setSession(session);
+      setUserId(session.user.id);
       setToken(session.access_token);
       setLoading(false);
     };
@@ -34,9 +37,10 @@ export default function FindMatchButton({ problem }) {
   });
 
   const payload = useMemo(() => ({
+    userId: userId,
     difficulty: problem.difficulty.toLowerCase(),
     topics: [problem.topic],
-  }), [problem]);
+  }), [problem, userId]);
 
   const handleFindMatch = () => {
     console.log("Finding match for:");
@@ -62,6 +66,7 @@ export default function FindMatchButton({ problem }) {
       }}
       onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = theme.accent)}
       onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = theme.primary)}
+      disabled={status === "searching" || userId === null}
     >
       Find Match
     </button>
