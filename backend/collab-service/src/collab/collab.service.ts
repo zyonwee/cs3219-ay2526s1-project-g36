@@ -186,39 +186,45 @@ export class CollabService {
         if (operation.retain) {
           offset += operation.retain;
         } else if (typeof operation.insert === 'string') {
-          const snippet = operation.insert.slice(0, MAX_SNIPPET_LENGTH);
-          const { line, col } = findSnippetLocation(beforeUpdateText, offset);
-          changes.push({
-            type: 'insert',
-            line,
-            col,
-            snippet,
-          });
+          if (!/^\s*$/.test(operation.insert)) {
+            const snippet = operation.insert.slice(0, MAX_SNIPPET_LENGTH);
+            const { line, col } = findSnippetLocation(beforeUpdateText, offset);
+            changes.push({
+              type: 'insert',
+              line,
+              col,
+              snippet,
+            });
+          }
         } else if (operation.delete) {
           const removed = beforeUpdateText
             .slice(offset, offset + operation.delete)
             .slice(0, MAX_SNIPPET_LENGTH); // get snippet of deleted text
           const { line, col } = findSnippetLocation(beforeUpdateText, offset);
-          changes.push({
-            type: 'delete',
-            line,
-            col,
-            snippet: removed,
-          });
+          if (!/^\s*$/.test(removed)) {
+            changes.push({
+              type: 'delete',
+              line,
+              col,
+              snippet: removed,
+            });
+          }
           offset += operation.delete;
         }
       }
 
-      const historyKey = `${HISTORY_PREFIX}${sessionId}:${now}:${Math.random().toString(36).slice(2, 8)}`;
-      historyRecord = {
-        userId,
-        timestamp: now,
-        changes,
-      };
-      await this.db.put(
-        historyKey,
-        new TextEncoder().encode(JSON.stringify(historyRecord)),
-      );
+      if (changes.length > 0) {
+        const historyKey = `${HISTORY_PREFIX}${sessionId}:${now}:${Math.random().toString(36).slice(2, 8)}`;
+        historyRecord = {
+          userId,
+          timestamp: now,
+          changes,
+        };
+        await this.db.put(
+          historyKey,
+          new TextEncoder().encode(JSON.stringify(historyRecord)),
+        );
+      }
     }
 
     session.numberOfOperations++;
