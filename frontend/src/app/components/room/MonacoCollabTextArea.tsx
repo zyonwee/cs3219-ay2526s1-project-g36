@@ -58,14 +58,6 @@ export default function MonacoCollabTextArea({ roomId, token }: RoomProps) {
     const bindingMadeRef = useRef(false); // guard against double-mount in dev
     const bindingRef = useRef<any | null>(null);
 
-    // Batch buffer for Y updates
-    const pendingUpdatesRef = useRef<Uint8Array[]>([]);
-    const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const lastFlushAtRef = useRef<number>(0);
-    const FLUSH_INTERVAL_MS = 1000; // flush every 1000ms
-    const MAX_BATCH = 40; // 40 updates max per batch
-    const MAX_BYTES = 64 * 1024; // 64 KB max per batch
-
     // Yjs
     const yDoc = useMemo(() => new Y.Doc(), []);
     const yText = useMemo(() => yDoc.getText("content"), [yDoc]);
@@ -76,26 +68,6 @@ export default function MonacoCollabTextArea({ roomId, token }: RoomProps) {
     >("disconnected");
     const [language, setLanguage] = useState("python");
     const [history, setHistory] = useState<EditHistoryRecord[]>([]);
-
-    const flushPendingUpdates = () => {
-        if (pendingUpdatesRef.current.length === 0) {
-            return;
-        }
-        const mergedUpdates = Y.mergeUpdates(pendingUpdatesRef.current);
-        pendingUpdatesRef.current = [];
-        lastFlushAtRef.current = Date.now();
-        socketRef.current?.emit("collab:update", mergedUpdates);
-    };
-
-    const scheduleFlush = () => {
-        if (flushTimerRef.current) {
-            clearTimeout(flushTimerRef.current);
-        }
-        flushTimerRef.current = setTimeout(
-            flushPendingUpdates,
-            FLUSH_INTERVAL_MS
-        );
-    };
 
     // Socket.IO wiring
     useEffect(() => {
@@ -137,30 +109,16 @@ export default function MonacoCollabTextArea({ roomId, token }: RoomProps) {
             setHistory((prevHistory) => [record, ...prevHistory].slice(0, 50));
         });
 
-        const onLocalUpdate = (update: Uint8Array) => {
-            pendingUpdatesRef.current.push(update);
-
-            const totalBytesSoFar = pendingUpdatesRef.current.reduce(
-                (acc, curr) => acc + curr.byteLength,
-                0
-            );
-            if (
-                pendingUpdatesRef.current.length >= MAX_BATCH ||
-                totalBytesSoFar >= MAX_BYTES
-            ) {
-                flushPendingUpdates();
-            } else {
-                scheduleFlush();
+        const onLocalUpdate = (update: Uint8Array, origin: unknown) => {
+            if (origin !== bindingRef.current) {
+                return;
             }
+            socketRef.current?.emit("collab:update", update);
         };
 
         yDoc.on("update", onLocalUpdate);
 
         return () => {
-            if (flushTimerRef.current) {
-                clearTimeout(flushTimerRef.current);
-            }
-            flushPendingUpdates();
             yDoc.off("update", onLocalUpdate);
             socket.disconnect();
             socketRef.current = null;
@@ -213,7 +171,13 @@ export default function MonacoCollabTextArea({ roomId, token }: RoomProps) {
 
         // Dynamic import to avoid "window is not defined" at module eval
         const { MonacoBinding } = await import("y-monaco");
-        new MonacoBinding(yText, model, new Set([editor]), awareness);
+        const binding = new MonacoBinding(
+            yText,
+            model,
+            new Set([editor]),
+            awareness
+        );
+        bindingRef.current = binding;
 
         // set initial language
         monacoNS.editor.setModelLanguage(model, language);
