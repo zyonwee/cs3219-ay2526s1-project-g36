@@ -8,6 +8,8 @@ import ProfileForm from "../components/profile/ProfileForm";
 import QuestionHistory from "../components/profile/QuestionHistory";
 import { useTheme } from "../../../context/ThemeContext";
 import { useRequireAuth } from '../../../lib/useRequireAuth';
+import { getToken } from "../../../lib/auth";
+
 
 type Profile = {
   id: string;
@@ -39,6 +41,7 @@ export default function ProfilePage() {
       const { data } = await supabaseBrowser.auth.getUser();
       const sessionEmail = data.user?.email ?? "";
       if (sessionEmail) setEmail(sessionEmail);
+      console.log(getToken());
     })();
   }, []);
 

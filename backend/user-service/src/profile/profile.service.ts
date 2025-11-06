@@ -59,5 +59,17 @@ export class ProfileService {
       }
     });
   }
+
+  async getUsername(userId: string) {
+    const profile = await this.prisma.profile.findUnique({
+      where: { user_id: userId },
+      select: {
+        username: true,
+      },
+    });
+
+    if (!profile) throw new NotFoundException('Profile not found');
+    return { username: profile.username };
+  }
 }
 
