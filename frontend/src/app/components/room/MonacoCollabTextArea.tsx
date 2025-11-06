@@ -9,7 +9,13 @@ import type { editor as MonacoEditorNS } from "monaco-editor";
 import { useTheme } from "../../../../context/ThemeContext";
 import { clear } from "console";
 
-type RoomProps = { roomId: string; token: string };
+type RoomProps = {
+    roomId: string;
+    token: string;
+    ownUserId: string;
+    ownName: string;
+    partnerName: string;
+};
 
 type Change = {
     type: "insert" | "delete";
@@ -25,6 +31,18 @@ type EditHistoryRecord = {
 };
 
 const Editor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
+
+const resolveUsername = (
+    userId: string,
+    ownUserId: string,
+    ownName: string,
+    partnerName: string
+) => {
+    if (userId === ownUserId) {
+        return ownName || "You";
+    }
+    return partnerName || "Unknown";
+};
 
 const toUint8Array = (data: unknown): Uint8Array =>
     data instanceof Uint8Array
@@ -47,7 +65,13 @@ const formatRelativeTime = (timestamp: number): string => {
     return new Date(timestamp).toLocaleString();
 };
 
-export default function MonacoCollabTextArea({ roomId, token }: RoomProps) {
+export default function MonacoCollabTextArea({
+    roomId,
+    token,
+    ownUserId,
+    ownName,
+    partnerName,
+}: RoomProps) {
     const { theme } = useTheme();
     const serverUrl = process.env.NEXT_PUBLIC_COLLAB_WS_URL!;
     const socketRef = useRef<Socket | null>(null);
@@ -356,7 +380,12 @@ export default function MonacoCollabTextArea({ roomId, token }: RoomProps) {
                                         }}
                                     >
                                         <strong style={{ color: theme.text }}>
-                                            {record.userId}
+                                            {resolveUsername(
+                                                record.userId,
+                                                ownUserId,
+                                                ownName,
+                                                partnerName
+                                            )}
                                         </strong>{" "}
                                         • {formatRelativeTime(record.timestamp)}
                                     </div>

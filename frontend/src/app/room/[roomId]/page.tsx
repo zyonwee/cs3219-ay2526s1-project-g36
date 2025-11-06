@@ -10,6 +10,7 @@ import CommentPanel from "../../components/room/CommentPanel";
 import MonacoCollabTextArea from "../../components/room/MonacoCollabTextArea";
 import LeaveButton from "../../components/room/LeaveButton";
 import { Session } from "@supabase/supabase-js";
+import { set } from "lib0/encoding.js";
 
 type Props = {
     params: Promise<{ roomId: string }>;
@@ -21,12 +22,27 @@ export default function RoomPage({ params }: Props) {
     const router = useRouter();
     const [session, setSession] = useState<Session | null>(null);
     const [loading, setLoading] = useState(true);
+    const [ownUserId, setOwnUserId] = useState<string | null>(null);
+    const [partnerId, setPartnerId] = useState<string | null>(null);
+    const [ownName, setOwnName] = useState<string | null>(null);
+    const [partnerName, setPartnerName] = useState<string | null>(null);
 
     // Resolve params safely
     useEffect(() => {
         (async () => {
             const resolved = await params;
             setRoomId(resolved.roomId);
+            try {
+                const meta = sessionStorage.getItem(
+                    `roommeta:${resolved.roomId}`
+                );
+                if (meta) {
+                    const parsed = JSON.parse(meta);
+                    setPartnerId(parsed.matchedUserId || null);
+                }
+            } catch (e) {
+                console.error("Error parsing room metadata:", e);
+            }
         })();
     }, [params]);
 
@@ -38,12 +54,51 @@ export default function RoomPage({ params }: Props) {
             const s = await getSession();
             if (!s) throw new Error("Unable to fetch session");
             setSession(s);
+            setOwnUserId(s.user.id);
             setLoading(false);
         };
         loadSession();
     }, [ok]);
 
-    if (!roomId || !ok || loading)
+    useEffect(() => {
+        if (!partnerId || !session) return;
+
+        const fetchOwnName = async () => {
+            const response = await fetch(
+                `${process.env.NEXT_PUBLIC_USER_SERVICE_URL}/profile/me`,
+                {
+                    headers: {
+                        Authorization: `Bearer ${session?.access_token}`,
+                    },
+                }
+            );
+            if (!response.ok) {
+                return;
+            }
+            const data = await response.json();
+            setOwnName(data.profile.username || null);
+        };
+
+        const fetchPartnerName = async () => {
+            const response = await fetch(
+                `${process.env.NEXT_PUBLIC_USER_SERVICE_URL}/profile/username?userId=${partnerId}`,
+                {
+                    headers: {
+                        Authorization: `Bearer ${session?.access_token}`,
+                    },
+                }
+            );
+            if (!response.ok) {
+                return;
+            }
+            const { username } = await response.json();
+            setPartnerName(username || null);
+        };
+        fetchPartnerName();
+        fetchOwnName();
+    }, [partnerId, session]);
+
+    if (!roomId || !ok || !ownUserId || !partnerName || !ownName || loading)
         return <div className="p-8">Loading room...</div>;
 
     const token = session?.access_token;
@@ -61,9 +116,30 @@ export default function RoomPage({ params }: Props) {
                 <LeaveButton />
             </div>
 
+            <div className="mb-4 text-sm text-neutral-400">
+                {partnerName ? (
+                    <>
+                        Matched with{" "}
+                        <span className="text-blue-400 font-medium">
+                            {partnerName}
+                        </span>
+                    </>
+                ) : partnerId ? (
+                    "Loading partner…"
+                ) : (
+                    "Matched user unknown"
+                )}
+            </div>
+
             {token && (
                 <div className="flex-grow overflow-hidden">
-                    <MonacoCollabTextArea roomId={roomId} token={token} />
+                    <MonacoCollabTextArea
+                        roomId={roomId}
+                        token={token}
+                        ownUserId={ownUserId}
+                        ownName={ownName}
+                        partnerName={partnerName}
+                    />
                 </div>
             )}
 
