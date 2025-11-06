@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, ParseUUIDPipe, Patch, Query, Req, UseGuards } from '@nestjs/common';
 import { BearerAuthGuard } from '../auth/bearer-auth.guard';
 import { ProfileService } from './profile.service';
 import { ProfileDto } from '../dto/profile.dto';
@@ -20,9 +20,19 @@ export class ProfileController {
         //return { user: { sub, email, role } };
     }
     
+    @UseGuards(BearerAuthGuard)
     @Patch('me')
     async updateMe(@Req() req: any, @Body() dto: ProfileDto) {
         const { sub, email, role } = req.user || {};
         return this.profileService.updateProfile(sub, email, dto);
     }
+
+    @UseGuards(BearerAuthGuard)
+    @Get('username')
+    async getUsernameByQuery(
+        @Query('userId', new ParseUUIDPipe({ version: '4' })) userId: string,
+    ) {
+    const { username } = await this.profileService.getUsername(userId);
+    return { username };
+  }
 }
