@@ -2,7 +2,6 @@ import * as Y from 'yjs';
 import { Awareness } from 'y-protocols/awareness';
 import { Injectable, Logger } from '@nestjs/common';
 import { ClassicLevel } from 'classic-level';
-import { time } from 'console';
 
 export type SessionState = {
   doc: Y.Doc;
@@ -186,29 +185,25 @@ export class CollabService {
         if (operation.retain) {
           offset += operation.retain;
         } else if (typeof operation.insert === 'string') {
-          if (!/^\s*$/.test(operation.insert)) {
-            const snippet = operation.insert.slice(0, MAX_SNIPPET_LENGTH);
-            const { line, col } = findSnippetLocation(beforeUpdateText, offset);
-            changes.push({
-              type: 'insert',
-              line,
-              col,
-              snippet,
-            });
-          }
+          const snippet = operation.insert.slice(0, MAX_SNIPPET_LENGTH);
+          const { line, col } = findSnippetLocation(beforeUpdateText, offset);
+          changes.push({
+            type: 'insert',
+            line,
+            col,
+            snippet,
+          });
         } else if (operation.delete) {
           const removed = beforeUpdateText
             .slice(offset, offset + operation.delete)
             .slice(0, MAX_SNIPPET_LENGTH); // get snippet of deleted text
           const { line, col } = findSnippetLocation(beforeUpdateText, offset);
-          if (!/^\s*$/.test(removed)) {
-            changes.push({
-              type: 'delete',
-              line,
-              col,
-              snippet: removed,
-            });
-          }
+          changes.push({
+            type: 'delete',
+            line,
+            col,
+            snippet: removed,
+          });
           offset += operation.delete;
         }
       }
