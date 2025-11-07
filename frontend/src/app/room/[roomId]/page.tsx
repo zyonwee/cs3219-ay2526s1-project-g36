@@ -116,18 +116,22 @@ export default function RoomPage({ params }: Props) {
                 <LeaveButton />
             </div>
 
-            <div className="mb-4 text-sm text-neutral-400">
+            <div className="mb-4 text-sm text-gray-700 dark:text-gray-300">
                 {partnerName ? (
                     <>
                         Matched with{" "}
-                        <span className="text-blue-400 font-medium">
+                        <span className="text-blue-500 dark:text-blue-400 font-semibold">
                             {partnerName}
                         </span>
                     </>
                 ) : partnerId ? (
-                    "Loading partner…"
+                    <span className="text-gray-500 dark:text-gray-400">
+                        Loading partner…
+                    </span>
                 ) : (
-                    "Matched user unknown"
+                    <span className="text-gray-500 dark:text-gray-400">
+                        Matched user unknown
+                    </span>
                 )}
             </div>
 

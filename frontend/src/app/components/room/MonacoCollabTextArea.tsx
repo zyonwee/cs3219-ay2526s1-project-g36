@@ -292,7 +292,7 @@ export default function MonacoCollabTextArea({
                     <span
                         style={{
                             fontSize: "0.85rem",
-                            color: theme.textSecondary,
+                            color: theme.id === "dark" ? "#d1d5db" : "#4b5563",
                         }}
                     >
                         {status === "connected"
@@ -339,9 +339,9 @@ export default function MonacoCollabTextArea({
                 <h2
                     style={{
                         fontWeight: 600,
-                        marginBottom: "8px",
-                        color: theme.text,
-                        fontSize: "0.95rem",
+                        marginBottom: "12px",
+                        color: theme.id === "dark" ? "#f3f4f6" : "#111827",
+                        fontSize: "1rem",
                         flexShrink: 0,
                     }}
                 >
@@ -357,8 +357,9 @@ export default function MonacoCollabTextArea({
                     {history.length === 0 ? (
                         <p
                             style={{
-                                fontSize: "0.85rem",
-                                color: theme.textSecondary,
+                                fontSize: "0.875rem",
+                                color:
+                                    theme.id === "dark" ? "#9ca3af" : "#6b7280",
                             }}
                         >
                             No edits yet.
@@ -379,12 +380,23 @@ export default function MonacoCollabTextArea({
                                 >
                                     <div
                                         style={{
-                                            fontSize: "0.75rem",
-                                            color: theme.textSecondary,
-                                            marginBottom: "4px",
+                                            fontSize: "0.8rem",
+                                            color:
+                                                theme.id === "dark"
+                                                    ? "#d1d5db"
+                                                    : "#4b5563",
+                                            marginBottom: "6px",
                                         }}
                                     >
-                                        <strong style={{ color: theme.text }}>
+                                        <strong
+                                            style={{
+                                                color:
+                                                    theme.id === "dark"
+                                                        ? "#f3f4f6"
+                                                        : "#111827",
+                                                fontWeight: 600,
+                                            }}
+                                        >
                                             {resolveUsername(
                                                 record.userId,
                                                 ownUserId,
@@ -403,26 +415,23 @@ export default function MonacoCollabTextArea({
                                         }}
                                         style={{
                                             marginTop: "4px",
-                                            marginBottom: "6px",
-                                            padding: "4px 8px",
+                                            marginBottom: "8px",
+                                            padding: "5px 10px",
                                             fontSize: "0.75rem",
-                                            backgroundColor:
-                                                theme.button?.background ||
-                                                "#3b82f6",
+                                            backgroundColor: "#3b82f6",
                                             color: "#ffffff",
                                             border: "none",
-                                            borderRadius: "4px",
+                                            borderRadius: "6px",
                                             cursor: "pointer",
                                             transition: "background-color 0.2s",
+                                            fontWeight: 500,
                                         }}
                                         onMouseEnter={(e) => {
                                             e.currentTarget.style.backgroundColor =
-                                                theme.button?.hover ||
                                                 "#2563eb";
                                         }}
                                         onMouseLeave={(e) => {
                                             e.currentTarget.style.backgroundColor =
-                                                theme.button?.background ||
                                                 "#3b82f6";
                                         }}
                                     >
@@ -445,7 +454,11 @@ export default function MonacoCollabTextArea({
                                                     style={{
                                                         marginLeft: "8px",
                                                         fontSize: "0.8rem",
-                                                        color: theme.text,
+                                                        color:
+                                                            theme.id === "dark"
+                                                                ? "#e5e7eb"
+                                                                : "#374151",
+                                                        marginBottom: "4px",
                                                     }}
                                                 >
                                                     <span
@@ -465,8 +478,8 @@ export default function MonacoCollabTextArea({
                                                             backgroundColor:
                                                                 bgColor,
                                                             color: changeColor,
-                                                            padding: "2px 4px",
-                                                            borderRadius: "3px",
+                                                            padding: "2px 5px",
+                                                            borderRadius: "4px",
                                                             fontSize: "0.75rem",
                                                             fontFamily:
                                                                 "monospace",
