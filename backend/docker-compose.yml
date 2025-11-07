@@ -1,33 +1,44 @@
 services:
-    matching:
-        build:
-            context: ./matching-service
-            dockerfile: Dockerfile
-        container_name: matching-service
-        env_file:
-            - ./matching-service/.env
-        ports:
-            - "3001:3000" # host 3000 -> container 3000
-        restart: unless-stopped
+  matching:
+    build:
+      context: ./matching-service
+      dockerfile: Dockerfile
+    container_name: matching-service
+    env_file:
+      - ./matching-service/.env
+    ports:
+      - "3001:3000" # host 3000 -> container 3000
+    restart: unless-stopped
 
-    collab:
-        build:
-            context: ./collab-service
-            dockerfile: Dockerfile
-        container_name: collab-service
-        env_file:
-            - ./collab-service/.env
-        volumes:
-            - ./collab-level-db:/data/leveldb
-        ports:
-            - "3002:3000" # host 3002 -> container 3000
-        restart: unless-stopped
-        healthcheck:
-            test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
-            interval: 10s
-            timeout: 2s
-            retries: 5
-            start_period: 5s
+  collab:
+    build:
+      context: ./collab-service
+      dockerfile: Dockerfile
+    container_name: collab-service
+    env_file:
+      - ./collab-service/.env
+    volumes:
+      - ./collab-level-db:/data/leveldb
+    ports:
+      - "3002:3000" # host 3002 -> container 3000
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 2s
+      retries: 5
+      start_period: 5s
+
+  user:
+    build:
+      context: ./user-service
+      dockerfile: Dockerfile
+    container_name: user-service
+    env_file:
+      - ./user-service/.env
+    ports:
+      - "4001:4001" # host 4001 -> container 3000
+    restart: unless-stopped
 
     qn:
         build:
@@ -41,5 +52,5 @@ services:
         restart: unless-stopped
 
 networks:
-    default:
-        name: peerprep-net
+  default:
+    name: peerprep-net
