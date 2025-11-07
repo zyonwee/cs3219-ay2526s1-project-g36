@@ -328,24 +328,18 @@ export class CollabGateway {
     const sessionId = client.data.sessionId as string;
     if (!sessionId) return;
 
-    const text = await this.collab.getStateTextAt(sessionId, body.timestamp);
-    const update = await this.collab.revertToText(
+    // run atomic hard-reset
+    const { state, history } = await this.collab.revertHard(
       sessionId,
-      text,
+      body.timestamp,
       client.data.userId,
     );
 
-    if (update && update.byteLength > 0) {
-      this.server.to('session:' + sessionId).emit('collab:update', update);
-    }
+    // broadcast a fresh full state
+    this.server.to('session:' + sessionId).emit('collab:state', state);
 
-    const historyRecords: EditHistoryRecord[] = await this.collab.getHistory(
-      sessionId,
-      50,
-    );
-    this.server
-      .to('session:' + sessionId)
-      .emit('collab:history', historyRecords);
+    // refresh history list
+    this.server.to('session:' + sessionId).emit('collab:history', history);
   }
 
   @SubscribeMessage('collab:awareness')

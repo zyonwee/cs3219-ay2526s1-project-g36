@@ -70,6 +70,7 @@ export class CollabService {
 
   private sessions = new Map<string, SessionState>();
   private db: ClassicLevel<string, Uint8Array>;
+  private revertingSessions = new Set<string>();
 
   constructor() {
     const path = process.env.COLLAB_SERVICE_PATH;
@@ -154,6 +155,11 @@ export class CollabService {
     update: Uint8Array,
     userId: string,
   ) {
+    if (this.isReverting(sessionId)) {
+      // skip applying updates while reverting
+      return null;
+    }
+
     const session = await this.getOrLoadSession(sessionId);
     const currentText = session.doc.getText('content');
     let historyRecord: EditHistoryRecord | null = null;
@@ -362,6 +368,113 @@ export class CollabService {
     );
 
     return finalUpdate;
+  }
+
+  beginRevertSession(sessionId: string) {
+    this.revertingSessions.add(sessionId);
+  }
+
+  endRevertSession(sessionId: string) {
+    this.revertingSessions.delete(sessionId);
+  }
+
+  isReverting(sessionId: string): boolean {
+    return this.revertingSessions.has(sessionId);
+  }
+
+  async pruneForwardHistory(sessionId: string, cutoffTimestamp: number) {
+    const deleteKeys: string[] = [];
+
+    // delete updates after cutoffTimestamp
+    for await (const [key] of this.db.iterator(updateRange(sessionId))) {
+      const timestamp = Number(key.split(':')[2]);
+      if (timestamp > cutoffTimestamp) {
+        deleteKeys.push(key);
+      }
+    }
+
+    // delete history records after cutoffTimestamp
+    const historyPrefix = `${HISTORY_PREFIX}${sessionId}:`;
+    for await (const [key] of this.db.iterator({
+      gte: historyPrefix,
+      lt: historyPrefix + '\xFF',
+    })) {
+      const timestamp = Number(key.split(':')[2]);
+      if (timestamp > cutoffTimestamp) {
+        deleteKeys.push(key);
+      }
+    }
+
+    if (deleteKeys.length) {
+      const batch = this.db.batch();
+      for (const delKey of deleteKeys) {
+        batch.del(delKey);
+      }
+      await batch.write();
+    }
+  }
+
+  async revertHard(
+    sessionId: string,
+    targetTimestamp: number,
+    userId: string,
+  ): Promise<{ state: Uint8Array; history: EditHistoryRecord[] }> {
+    this.beginRevertSession(sessionId);
+
+    try {
+      // build target doc from DB to state to revert to
+      const targetDoc = await this.buildDocAt(sessionId, targetTimestamp);
+      const targetText = targetDoc.getText('content').toString();
+
+      // replace in memory doc
+      const session = await this.getOrLoadSession(sessionId);
+      session.doc.transact(() => {
+        const y = session.doc.getText('content');
+        const length = y.length ?? y.toString().length;
+        if (length > 0) {
+          y.delete(0, length);
+        }
+        if (targetText) {
+          y.insert(0, targetText);
+        }
+      }, 'revert-hard');
+
+      // prune forward in DB
+      await this.pruneForwardHistory(sessionId, targetTimestamp);
+
+      // snapshot new HEAD
+      await this.writeSnapshotToDb(sessionId, session);
+      session.numberOfOperations = 0;
+      session.lastSnapshotAt = Date.now();
+
+      // write one marker history record
+      const now = Date.now();
+      const historyKey = `${HISTORY_PREFIX}${sessionId}:${now}:${Math.random().toString(36).slice(2, 8)}`;
+      const markerRecord: EditHistoryRecord = {
+        userId,
+        timestamp: now,
+        changes: [
+          {
+            type: 'insert',
+            line: 1,
+
+            col: 1,
+            snippet: '[Reverted to this version]',
+          },
+        ],
+      };
+      await this.db.put(
+        historyKey,
+        new TextEncoder().encode(JSON.stringify(markerRecord)),
+      );
+
+      // return full state and refreshed history
+      const state = Y.encodeStateAsUpdate(session.doc);
+      const history = await this.getHistory(sessionId, 50);
+      return { state, history };
+    } finally {
+      this.endRevertSession(sessionId);
+    }
   }
 
   getAwareness(sessionId: string): Promise<Awareness> {
