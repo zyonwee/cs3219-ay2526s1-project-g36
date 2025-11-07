@@ -285,6 +285,85 @@ export class CollabService {
     return history;
   }
 
+  async buildDocAt(sessionId: string, timestamp: number): Promise<Y.Doc> {
+    const doc = new Y.Doc();
+    const base = `${UPDATE_PREFIX}${sessionId}:`;
+    const upperBound = `${UPDATE_PREFIX}${sessionId}:${String(timestamp).padStart(13, '0')}\xFF`;
+
+    for await (const [key, val] of this.db.iterator({
+      gte: base,
+      lt: upperBound,
+    })) {
+      try {
+        Y.applyUpdate(doc, val);
+      } catch (error) {
+        this.log.error(
+          `Failed to apply update ${key} for session ${sessionId}: ${error}`,
+        );
+      }
+    }
+    return doc;
+  }
+
+  async getStateTextAt(sessionId: string, timestamp: number): Promise<string> {
+    const doc = await this.buildDocAt(sessionId, timestamp);
+    return doc.getText('content').toString();
+  }
+
+  async revertToText(
+    sessionId: string,
+    text: string,
+    userId: string,
+  ): Promise<Uint8Array> {
+    const session = await this.getOrLoadSession(sessionId);
+
+    let finalUpdate: Uint8Array | null = null;
+    const onUpdate = (update: Uint8Array) => {
+      finalUpdate = update;
+    };
+    session.doc.once('update', onUpdate);
+
+    session.doc.transact(() => {
+      const y = session.doc.getText('content');
+      const length = y.length ?? y.toString().length;
+      if (length > 0) {
+        y.delete(0, length);
+      }
+      if (text && text.length > 0) {
+        y.insert(0, text);
+      }
+    }, 'revert');
+
+    session.doc.off('update', onUpdate);
+
+    if (!finalUpdate || finalUpdate.byteLength === 0) {
+      return new Uint8Array();
+    }
+
+    const now = Date.now();
+    await this.db.put(updateKey(sessionId, now), finalUpdate);
+
+    const historyKey = `${HISTORY_PREFIX}${sessionId}:${now}:${Math.random().toString(36).slice(2, 8)}`;
+    const historyRecord: EditHistoryRecord = {
+      userId,
+      timestamp: now,
+      changes: [
+        {
+          type: 'insert',
+          line: 1,
+          col: 1,
+          snippet: '[Document reverted]',
+        },
+      ],
+    };
+    await this.db.put(
+      historyKey,
+      new TextEncoder().encode(JSON.stringify(historyRecord)),
+    );
+
+    return finalUpdate;
+  }
+
   getAwareness(sessionId: string): Promise<Awareness> {
     return this.getOrLoadSession(sessionId).then(
       (session) => session.awareness,

@@ -9,6 +9,8 @@ import { Socket, Server } from 'socket.io';
 import { AuthService } from 'src/auth/auth.service';
 import { CollabService } from './collab.service';
 import { toUint8 } from './helpers';
+import { text } from 'stream/consumers';
+import { timestamp } from 'rxjs';
 
 type History = { timer: NodeJS.Timeout | null; records: EditHistoryRecord[] };
 
@@ -316,6 +318,34 @@ export class CollabGateway {
     this.collab.setLanguage(sessionId, language);
 
     client.to('session:' + sessionId).emit('collab:language', { language });
+  }
+
+  @SubscribeMessage('collab:revert')
+  async handleRevert(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { timestamp: number },
+  ) {
+    const sessionId = client.data.sessionId as string;
+    if (!sessionId) return;
+
+    const text = await this.collab.getStateTextAt(sessionId, body.timestamp);
+    const update = await this.collab.revertToText(
+      sessionId,
+      text,
+      client.data.userId,
+    );
+
+    if (update && update.byteLength > 0) {
+      this.server.to('session:' + sessionId).emit('collab:update', update);
+    }
+
+    const historyRecords: EditHistoryRecord[] = await this.collab.getHistory(
+      sessionId,
+      50,
+    );
+    this.server
+      .to('session:' + sessionId)
+      .emit('collab:history', historyRecords);
   }
 
   @SubscribeMessage('collab:awareness')

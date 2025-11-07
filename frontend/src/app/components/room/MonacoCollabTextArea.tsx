@@ -81,6 +81,7 @@ export default function MonacoCollabTextArea({
     const monacoNSRef = useRef<typeof import("monaco-editor") | null>(null);
     const bindingMadeRef = useRef(false); // guard against double-mount in dev
     const bindingRef = useRef<any | null>(null);
+    const isRevertingRef = useRef(false);
 
     // Yjs
     const yDoc = useMemo(() => new Y.Doc(), []);
@@ -92,6 +93,10 @@ export default function MonacoCollabTextArea({
     >("disconnected");
     const [language, setLanguage] = useState("python");
     const [history, setHistory] = useState<EditHistoryRecord[]>([]);
+    const [revertModalOpen, setRevertModalOpen] = useState(false);
+    const [selectedRevertTimestamp, setSelectedRevertTimestamp] = useState<
+        number | null
+    >(null);
 
     // Socket.IO wiring
     useEffect(() => {
@@ -389,6 +394,40 @@ export default function MonacoCollabTextArea({
                                         </strong>{" "}
                                         • {formatRelativeTime(record.timestamp)}
                                     </div>
+                                    <button
+                                        onClick={() => {
+                                            setSelectedRevertTimestamp(
+                                                record.timestamp
+                                            );
+                                            setRevertModalOpen(true);
+                                        }}
+                                        style={{
+                                            marginTop: "4px",
+                                            marginBottom: "6px",
+                                            padding: "4px 8px",
+                                            fontSize: "0.75rem",
+                                            backgroundColor:
+                                                theme.button?.background ||
+                                                "#3b82f6",
+                                            color: "#ffffff",
+                                            border: "none",
+                                            borderRadius: "4px",
+                                            cursor: "pointer",
+                                            transition: "background-color 0.2s",
+                                        }}
+                                        onMouseEnter={(e) => {
+                                            e.currentTarget.style.backgroundColor =
+                                                theme.button?.hover ||
+                                                "#2563eb";
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            e.currentTarget.style.backgroundColor =
+                                                theme.button?.background ||
+                                                "#3b82f6";
+                                        }}
+                                    >
+                                        Revert to this version
+                                    </button>
                                     {record.changes.map(
                                         (change: any, j: number) => {
                                             const isInsert =
@@ -446,6 +485,75 @@ export default function MonacoCollabTextArea({
                     )}
                 </div>
             </div>
+
+            {/* Revert Confirmation Modal */}
+            {revertModalOpen && selectedRevertTimestamp !== null && (
+                <div
+                    className="fixed inset-0 flex items-center justify-center bg-black/50 z-50"
+                    onClick={() => setRevertModalOpen(false)}
+                >
+                    <div
+                        className="bg-white dark:bg-neutral-800 rounded-xl p-6 shadow-lg w-[360px] animate-fade-in"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <h3 className="font-semibold text-lg mb-4 text-center">
+                            Revert to this version?
+                        </h3>
+                        <p className="text-sm text-gray-600 dark:text-gray-300 mb-6 text-center">
+                            Are you sure you want to revert the document to the
+                            version from{" "}
+                            <strong>
+                                {formatRelativeTime(selectedRevertTimestamp)}
+                            </strong>
+                            ?
+                            <br />
+                            <span className="text-xs text-red-500 dark:text-red-400 mt-2 block">
+                                This will affect all collaborators in the room.
+                            </span>
+                        </p>
+                        <div className="flex justify-center gap-4">
+                            <button
+                                onClick={() => {
+                                    socketRef.current?.emit("collab:revert", {
+                                        timestamp: selectedRevertTimestamp,
+                                    });
+                                    setRevertModalOpen(false);
+                                    setSelectedRevertTimestamp(null);
+                                }}
+                                className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md transition cursor-pointer"
+                            >
+                                Yes, Revert
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setRevertModalOpen(false);
+                                    setSelectedRevertTimestamp(null);
+                                }}
+                                className="bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500 text-gray-900 dark:text-white px-4 py-2 rounded-md transition cursor-pointer"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Simple fade animation */}
+            <style jsx>{`
+                @keyframes fadeIn {
+                    from {
+                        opacity: 0;
+                        transform: scale(0.95);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: scale(1);
+                    }
+                }
+                .animate-fade-in {
+                    animation: fadeIn 0.15s ease-out;
+                }
+            `}</style>
         </div>
     );
 }
