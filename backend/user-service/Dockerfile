@@ -19,10 +19,12 @@ ENV NODE_ENV=production
 COPY package*.json ./
 RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
-RUN npx prisma generate  # if using Prisma
-# If you need static files or prisma schema, copy them too:
-# COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
-# COPY --from=build /app/prisma ./prisma
+# ✅ Prisma schema (optional but recommended for migrations/introspection)
+COPY --from=build /app/prisma ./prisma
+
+# ✅ Copy the generated Prisma client + engines into the runtime image
+COPY --from=build /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 
 # The port Nest listens on (default 3000)
 ENV PORT=4001
