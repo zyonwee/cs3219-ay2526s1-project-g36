@@ -1,6 +1,10 @@
 import { Change, EditHistoryRecord } from './types';
 import { MERGE_WINDOW_MS } from './helpers';
 
+/**
+ * Combines changes for persistent history storage.
+ * More thorough merging that handles all edge cases.
+ */
 export function combineChanges(changes: Change[]): Change[] {
   if (!changes.length) return [];
 

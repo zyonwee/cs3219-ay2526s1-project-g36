@@ -25,6 +25,10 @@ export function flushBurst(
   bursts.delete(key);
 }
 
+/**
+ * Combines changes for real-time burst buffering.
+ * Optimized for speed and forward-typing patterns.
+ */
 export function combineChanges(changes: Change[]): Change[] {
   if (!changes.length) return [];
 
