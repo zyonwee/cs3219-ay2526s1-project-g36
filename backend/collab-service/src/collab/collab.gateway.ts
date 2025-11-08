@@ -9,139 +9,11 @@ import { Socket, Server } from 'socket.io';
 import { AuthService } from 'src/auth/auth.service';
 import { CollabService } from './collab.service';
 import { toUint8 } from './helpers';
-import { text } from 'stream/consumers';
-import { timestamp } from 'rxjs';
-
-type History = { timer: NodeJS.Timeout | null; records: EditHistoryRecord[] };
-
-type Change = {
-  type: 'insert' | 'delete';
-  line: number;
-  col: number;
-  snippet: string;
-};
-type EditHistoryRecord = {
-  userId: string;
-  timestamp: number;
-  changes: Change[];
-};
-
-type BurstBuffer = {
-  timer: NodeJS.Timeout | null;
-  startedAt: number; // when burst begun
-  lastAt: number; // last record time
-  lastLine: number | null; // to keep same-line bursts together
-  records: EditHistoryRecord[];
-};
+import { BurstBuffer } from './types';
+import { TYPE_BURST_MS, MAX_BURST_MS, ALLOWED_LANGUAGES } from './helpers';
+import { flushBurst } from './burst-manager';
 
 const bursts = new Map<string, BurstBuffer>(); // key = `${sessionId}:${userId}`
-
-const TYPE_BURST_MS = 1000; // pause threshold to “close” a burst
-const MAX_BURST_MS = 5000; // safety cap: flush even if never paused
-
-const historyBuffers = new Map<string, History>();
-
-const ALLOWED_LANGUAGES = new Set(['python', 'javascript', 'java', 'cpp', 'c']);
-
-function mergeRecords(records: EditHistoryRecord[]): EditHistoryRecord {
-  const userId = records[0].userId;
-  const timestamp = records[records.length - 1].timestamp;
-  const all: Change[] = [];
-  for (const r of records) all.push(...r.changes);
-  const changes = combineChanges(all);
-  return { userId, timestamp, changes };
-}
-
-function flushBurst(server: Server, sessionId: string, key: string) {
-  const buffer = bursts.get(key);
-  if (!buffer || buffer.records.length === 0) return;
-  const merged = mergeRecords(buffer.records);
-  server.to('session:' + sessionId).emit('collab:history:new', merged);
-  // reset
-  if (buffer.timer) clearTimeout(buffer.timer);
-  bursts.delete(key);
-}
-
-function combineChanges(changes: Change[]): Change[] {
-  if (!changes.length) return [];
-
-  // Keep order as emitted
-  const out: Change[] = [];
-  let cur: Change | null = null;
-
-  const pushCur = () => {
-    if (cur) out.push({ ...cur });
-  };
-
-  for (const nxt of changes) {
-    if (!cur) {
-      cur = { ...nxt };
-      continue;
-    }
-
-    const sameType = cur.type === nxt.type;
-    const sameLine = cur.line === nxt.line;
-
-    if (sameType && sameLine) {
-      if (cur.type === 'insert') {
-        // Merge if the next insert starts at or near the end of current snippet (typing forward)
-        const curEnd = cur.col + cur.snippet.length;
-        if (nxt.col <= curEnd + 5 && nxt.col >= cur.col - 1) {
-          // If there is a small gap, fill with spaces so order stays correct
-          const gap = Math.max(0, nxt.col - curEnd);
-          if (gap > 0) cur.snippet += ' '.repeat(gap);
-          cur.snippet += nxt.snippet;
-          continue;
-        }
-      } else {
-        // DELETE: merge if ranges touch or overlap, including backspace-left behavior
-        const curStart = cur.col;
-        const curEnd = cur.col + cur.snippet.length;
-
-        const nxtStart = nxt.col;
-        const nxtEnd = nxt.col + nxt.snippet.length;
-
-        const touchingOrOverlapping = !(
-          nxtStart > curEnd + 1 || nxtEnd < curStart - 1
-        );
-
-        if (touchingOrOverlapping) {
-          // Expand to the union and rebuild snippet in correct order
-          const newStart = Math.min(curStart, nxtStart);
-          const leftFirst = nxtStart < curStart;
-
-          cur.snippet = leftFirst
-            ? nxt.snippet + cur.snippet
-            : cur.snippet + nxt.snippet;
-          cur.col = newStart;
-          continue;
-        }
-      }
-    }
-
-    pushCur();
-    cur = { ...nxt };
-  }
-
-  pushCur();
-
-  // Combine multi-line pastes typed in one burst
-  const final: Change[] = [];
-  for (const ch of out) {
-    const last = final[final.length - 1];
-    if (
-      last &&
-      last.type === ch.type &&
-      (last.line === ch.line || last.line + 1 === ch.line) &&
-      last.snippet.endsWith('\n')
-    ) {
-      last.snippet += ch.snippet;
-    } else {
-      final.push(ch);
-    }
-  }
-  return final;
-}
 
 @WebSocketGateway({ namespace: '/collab', transports: ['websocket'] })
 export class CollabGateway {
@@ -236,7 +108,7 @@ export class CollabGateway {
 
       if (!existing) {
         const timer = setTimeout(
-          () => flushBurst(this.server, sessionId, key),
+          () => flushBurst(this.server, sessionId, key, bursts),
           TYPE_BURST_MS,
         );
         bursts.set(key, {
@@ -263,14 +135,14 @@ export class CollabGateway {
             historyRecord.changes[0]?.line ?? existing.lastLine;
           if (existing.timer) clearTimeout(existing.timer);
           existing.timer = setTimeout(
-            () => flushBurst(this.server, sessionId, key),
+            () => flushBurst(this.server, sessionId, key, bursts),
             TYPE_BURST_MS,
           );
         } else {
           // close old burst and start a new one
-          flushBurst(this.server, sessionId, key);
+          flushBurst(this.server, sessionId, key, bursts);
           const timer = setTimeout(
-            () => flushBurst(this.server, sessionId, key),
+            () => flushBurst(this.server, sessionId, key, bursts),
             TYPE_BURST_MS,
           );
           bursts.set(key, {

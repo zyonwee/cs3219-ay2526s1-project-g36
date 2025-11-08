@@ -7,7 +7,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import type { editor as MonacoEditorNS } from "monaco-editor";
 import { useTheme } from "../../../../context/ThemeContext";
-import { clear } from "console";
 
 type RoomProps = {
     roomId: string;
