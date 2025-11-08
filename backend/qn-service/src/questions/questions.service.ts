@@ -11,7 +11,25 @@ export class QuestionsService {
 
   // this function fetches the top 'limit' questions from the 'questions' collection in the MongoDB database
   findTop(limit = 5) {
-    return this.collection.find({}).limit(limit).toArray();
+    return this.collection
+      .find({})
+      .limit(limit)
+      .toArray()
+      .then((items) => items.map((i) => this.addPoints(i)));
+  }
+
+  private addPoints<T extends Record<string, any>>(doc: T): T & { points: number } {
+    const d = String(doc?.difficulty || '').toLowerCase();
+    let points = 0;
+    if (d === 'easy') points = 1;
+    else if (d === 'medium') points = 2;
+    else if (d === 'hard') points = 5;
+    return { ...(doc as any), points };
+  }
+
+  async findByIdExact(id: number) {
+    const doc = await this.collection.findOne({ id });
+    return doc ? this.addPoints(doc as any) : null;
   }
 
   /**
@@ -119,11 +137,12 @@ export class QuestionsService {
     pipeline.push({ $skip: skip });
     pipeline.push({ $limit: pageSize });
 
-    const [total, items] = await Promise.all([
+    const [total, rawItems] = await Promise.all([
       this.collection.countDocuments(match as Filter<Document>),
       this.collection.aggregate(pipeline).toArray(),
     ]);
 
+    const items = rawItems.map((i) => this.addPoints(i));
     return { items, total, page, pageSize };
   }
 }

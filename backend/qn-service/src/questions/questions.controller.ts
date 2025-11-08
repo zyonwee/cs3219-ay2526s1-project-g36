@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, Param, NotFoundException } from '@nestjs/common';
 import { QuestionsService } from './questions.service';
 import { BearerAuthGuard } from '../auth/bearer-auth.guard';
 
@@ -6,6 +6,20 @@ import { BearerAuthGuard } from '../auth/bearer-auth.guard';
 @UseGuards(BearerAuthGuard)
 export class QuestionsController {
   constructor(private readonly svc: QuestionsService) {}
+
+  @Get(':id')
+  async byId(@Param('id') idParam: string) {
+    const id = Number(idParam);
+    if (!Number.isFinite(id)) {
+      throw new NotFoundException('Invalid id');
+    }
+    const doc = await this.svc.findByIdExact(id);
+    if (!doc) {
+      throw new NotFoundException('Question not found');
+    }
+    return doc;
+  }
+
   @Get()
   async list(
     @Query('limit') limit?: string, // legacy; maps to pageSize if provided
