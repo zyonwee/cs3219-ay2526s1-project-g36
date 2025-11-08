@@ -22,7 +22,7 @@ export class QuestionsService {
     const d = String(doc?.difficulty || '').toLowerCase();
     let points = 0;
     if (d === 'easy') points = 1;
-    else if (d === 'medium') points = 2;
+    else if (d === 'medium') points = 3;
     else if (d === 'hard') points = 5;
     return { ...(doc as any), points };
   }

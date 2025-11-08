@@ -16,7 +16,7 @@ GET `/questions`
 
 Points mapping:
 - `easy` → `1`
-- `medium` → `2`
+- `medium` → `3`
 - `hard` → `5`
 
 ## Query Parameters
