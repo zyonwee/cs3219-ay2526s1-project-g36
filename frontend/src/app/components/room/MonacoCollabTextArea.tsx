@@ -228,6 +228,17 @@ export default function MonacoCollabTextArea({
         if (model) monacoNS.editor.setModelLanguage(model, language);
     }, [language]);
 
+    // Update editor read-only state based on connection status
+    useEffect(() => {
+        const editor = editorRef.current;
+        if (!editor) return;
+
+        // Make editor read-only when disconnected
+        editor.updateOptions({
+            readOnly: status !== "connected",
+        });
+    }, [status]);
+
     return (
         <div
             style={{
@@ -303,7 +314,7 @@ export default function MonacoCollabTextArea({
                 </div>
 
                 {/* Monaco Editor */}
-                <div style={{ flexGrow: 1 }}>
+                <div style={{ flexGrow: 1, position: "relative" }}>
                     <Editor
                         height="100%"
                         language={language}
@@ -316,9 +327,65 @@ export default function MonacoCollabTextArea({
                             scrollBeyondLastLine: false,
                             lineNumbers: "on",
                             smoothScrolling: true,
+                            readOnly: status !== "connected",
                         }}
                         onMount={handleMount}
                     />
+
+                    {/* Disconnection Overlay with Spinner */}
+                    {status !== "connected" && (
+                        <div
+                            style={{
+                                position: "absolute",
+                                top: 0,
+                                left: 0,
+                                right: 0,
+                                bottom: 0,
+                                backgroundColor:
+                                    theme.id === "dark"
+                                        ? "rgba(0, 0, 0, 0.7)"
+                                        : "rgba(255, 255, 255, 0.7)",
+                                display: "flex",
+                                flexDirection: "column",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                zIndex: 10,
+                                backdropFilter: "blur(2px)",
+                            }}
+                        >
+                            {/* Spinner */}
+                            <div
+                                className="spinner"
+                                style={{
+                                    width: "50px",
+                                    height: "50px",
+                                    border:
+                                        "4px solid " +
+                                        (theme.id === "dark"
+                                            ? "#333"
+                                            : "#e5e7eb"),
+                                    borderTop: "4px solid #3b82f6",
+                                    borderRadius: "50%",
+                                    animation: "spin 1s linear infinite",
+                                }}
+                            />
+                            <p
+                                style={{
+                                    marginTop: "16px",
+                                    fontSize: "1rem",
+                                    fontWeight: 500,
+                                    color:
+                                        theme.id === "dark"
+                                            ? "#f3f4f6"
+                                            : "#111827",
+                                }}
+                            >
+                                {status === "connecting"
+                                    ? "Connecting to collaboration service..."
+                                    : "Connection lost. Reconnecting..."}
+                            </p>
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -407,31 +474,48 @@ export default function MonacoCollabTextArea({
                                     </div>
                                     <button
                                         onClick={() => {
-                                            setSelectedRevertTimestamp(
-                                                record.timestamp
-                                            );
-                                            setRevertModalOpen(true);
+                                            if (status === "connected") {
+                                                setSelectedRevertTimestamp(
+                                                    record.timestamp
+                                                );
+                                                setRevertModalOpen(true);
+                                            }
                                         }}
+                                        disabled={status !== "connected"}
                                         style={{
                                             marginTop: "4px",
                                             marginBottom: "8px",
                                             padding: "5px 10px",
                                             fontSize: "0.75rem",
-                                            backgroundColor: "#3b82f6",
+                                            backgroundColor:
+                                                status !== "connected"
+                                                    ? "#9ca3af"
+                                                    : "#3b82f6",
                                             color: "#ffffff",
                                             border: "none",
                                             borderRadius: "6px",
-                                            cursor: "pointer",
+                                            cursor:
+                                                status !== "connected"
+                                                    ? "not-allowed"
+                                                    : "pointer",
                                             transition: "background-color 0.2s",
                                             fontWeight: 500,
+                                            opacity:
+                                                status !== "connected"
+                                                    ? 0.5
+                                                    : 1,
                                         }}
                                         onMouseEnter={(e) => {
-                                            e.currentTarget.style.backgroundColor =
-                                                "#2563eb";
+                                            if (status === "connected") {
+                                                e.currentTarget.style.backgroundColor =
+                                                    "#2563eb";
+                                            }
                                         }}
                                         onMouseLeave={(e) => {
-                                            e.currentTarget.style.backgroundColor =
-                                                "#3b82f6";
+                                            if (status === "connected") {
+                                                e.currentTarget.style.backgroundColor =
+                                                    "#3b82f6";
+                                            }
                                         }}
                                     >
                                         Revert to this version
@@ -550,7 +634,7 @@ export default function MonacoCollabTextArea({
                 </div>
             )}
 
-            {/* Simple fade animation */}
+            {/* Animations */}
             <style jsx>{`
                 @keyframes fadeIn {
                     from {
@@ -564,6 +648,14 @@ export default function MonacoCollabTextArea({
                 }
                 .animate-fade-in {
                     animation: fadeIn 0.15s ease-out;
+                }
+                @keyframes spin {
+                    from {
+                        transform: rotate(0deg);
+                    }
+                    to {
+                        transform: rotate(360deg);
+                    }
                 }
             `}</style>
         </div>
