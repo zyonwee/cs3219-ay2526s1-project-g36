@@ -70,6 +70,18 @@ export default function RoomPage({ params }: Props) {
         } catch {}
     }, []);
 
+    // Record attempt start time when entering room
+    useEffect(() => {
+        try {
+            if (typeof window !== 'undefined') {
+                const existing = localStorage.getItem('attemptStart');
+                if (!existing) {
+                    localStorage.setItem('attemptStart', new Date().toISOString());
+                }
+            }
+        } catch {}
+    }, []);
+
     // Divider drag logic
     const handleMouseDown = (e: React.MouseEvent) => {
         e.preventDefault();
