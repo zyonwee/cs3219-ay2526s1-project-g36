@@ -47,6 +47,20 @@ export default function FindMatchButton({ problem }) {
   const isQueuing = status === "connecting" || status === "queued";
 
   const handleFindMatch = () => {
+    try {
+      // Persist the selected problem so the Room page can display it
+      const toStore = {
+        id: problem.id,
+        name: problem.name,
+        title: problem.name,
+        description: problem.description,
+        difficulty: problem.difficulty,
+        topic: problem.topic,
+        acceptanceRate: problem.acceptanceRate,
+      };
+      localStorage.setItem("currentProblem", JSON.stringify(toStore));
+    } catch {}
+
     console.log("Finding match for:", {
       name: problem.name,
       topic: problem.topic,
