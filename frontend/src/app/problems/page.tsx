@@ -17,6 +17,14 @@ export default function ProblemsPage() {
   const [total, setTotal] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState<string>("");
+  const [debounced, setDebounced] = useState<string>("");
+
+  // Debounce search input
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(search.trim()), 250);
+    return () => clearTimeout(t);
+  }, [search]);
 
   // Fetch questions from qn-service (expects { items, total, page, pageSize })
   useEffect(() => {
@@ -26,8 +34,15 @@ export default function ProblemsPage() {
       setLoading(true);
       setError(null);
       try {
+        const query = new URLSearchParams({
+          page: String(page),
+          pageSize: String(pageSize),
+          sortBy: 'title',
+          sortDir: 'asc',
+        });
+        if (debounced) query.set('q', debounced);
         const resp = await qnJson<{ items: any[]; total: number; page: number; pageSize: number }>(
-          `/questions?page=${page}&pageSize=${pageSize}&sortBy=title&sortDir=asc`
+          `/questions?${query.toString()}`
         );
         const list = Array.isArray(resp?.items) ? resp.items : [];
         const mapped: Question[] = list.map((q: any, idx: number) => {
@@ -70,7 +85,7 @@ export default function ProblemsPage() {
     return () => {
       mounted = false;
     };
-  }, [ok, page, pageSize]);
+  }, [ok, page, pageSize, debounced]);
 
   if (!ok) {
     return (
@@ -86,6 +101,26 @@ export default function ProblemsPage() {
         <TopNavBar />
         <div className="my-4">
           <h1 className="text-2xl font-bold mb-4">Problems</h1>
+          <div className="flex items-center gap-3">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+              placeholder="Search by title or topic"
+              className="w-full max-w-xl border rounded px-3 py-2"
+            />
+            {search && (
+              <button
+                className="px-3 py-2 border rounded"
+                onClick={() => { setSearch(''); setPage(1); }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
         </div>
         {loading ? (
           <p className="text-gray-600">Loading questions...</p>

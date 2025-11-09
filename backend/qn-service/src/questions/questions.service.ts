@@ -74,14 +74,29 @@ export class QuestionsService {
       }
     }
 
-    // Search by keyword/name/index (case sensitive, partial match)
+    // Search by keyword: title OR id OR topics/data structures/tags/category (partial, case-insensitive)
     if (q && q.length > 0) {
       const escQ = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const titleRe = new RegExp(escQ); // case-sensitive, partial
-      const orConds = [{ title: { $regex: titleRe } } as any];
-      // allow id partial match via $toString in $expr
-      orConds.push({ $expr: { $regexMatch: { input: { $toString: '$id' }, regex: escQ } } });
+      const titleRe = new RegExp(escQ); // case-sensitive, partial for title
+      const topicRe = new RegExp(escQ, 'i'); // case-insensitive for topical fields
+      const orConds = [
+        { title: { $regex: titleRe } } as any,
+        // allow id partial match via $toString in $expr
+        { $expr: { $regexMatch: { input: { $toString: '$id' }, regex: escQ } } },
+        // match related_topics as string or array
+        { related_topics: { $regex: topicRe } } as any,
+        { related_topics: { $elemMatch: { $regex: topicRe } } } as any,
+        // match topic/category direct string fields
+        { topic: { $regex: topicRe } } as any,
+        { category: { $regex: topicRe } } as any,
+        // match data structures & tags if present (string or array)
+        { dataStructures: { $regex: topicRe } } as any,
+        { dataStructures: { $elemMatch: { $regex: topicRe } } } as any,
+        { tags: { $regex: topicRe } } as any,
+        { tags: { $elemMatch: { $regex: topicRe } } } as any,
+      ];
       if (match.$or) {
+        // If a topic filter already exists, combine with OR across q terms (AND between filters)
         match.$and = [{ $or: match.$or }, { $or: orConds }];
         delete match.$or;
       } else {
