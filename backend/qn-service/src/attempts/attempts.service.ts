@@ -1,3 +1,9 @@
+/*
+AI Assistance Disclosure:
+Tool: OpenAI ChatGPT via Codex CLI, date: 2025-11-10
+Scope: Implemented AttemptsService for creating and listing user question attempts (MongoDB collection binding).
+Author review: Reviewed types, ensured env-based collection naming and pagination limits.
+*/
 import { Inject, Injectable } from '@nestjs/common';
 import { Collection, Db, InsertOneResult } from 'mongodb';
 import { MONGO_DB } from '../mongodb/mongo.provider';

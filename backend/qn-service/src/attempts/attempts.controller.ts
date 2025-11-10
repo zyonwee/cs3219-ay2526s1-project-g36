@@ -1,3 +1,9 @@
+/*
+AI Assistance Disclosure:
+Tool: OpenAI ChatGPT via Codex CLI, date: 2025-11-10
+Scope: Implemented AttemptsController with POST /attempts and GET /attempts (Bearer auth) for Question Service.
+Author review: Validated JWT user extraction (sub/user_id) and basic input handling.
+*/
 import { Body, Controller, Get, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { AttemptsService, QuestionAttemptDoc } from './attempts.service';
 import { BearerAuthGuard } from '../auth/bearer-auth.guard';

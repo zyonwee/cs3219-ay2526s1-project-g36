@@ -1,4 +1,10 @@
 /**
+AI Assistance Disclosure:
+Tool: OpenAI ChatGPT via Codex CLI, date: 2025-11-10
+Scope: Generated seeding script to mass-create attempts for authenticated user via Question Service API.
+Author review: Adjusted env handling, randomized timestamps, and logging.
+*/
+/**
  * Seed Question Attempts into Question Service
  *
  * Requirements:
@@ -127,4 +133,3 @@ seed().catch((e) => {
   console.error('Seed error:', e);
   process.exit(1);
 });
-

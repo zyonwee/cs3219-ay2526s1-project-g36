@@ -1,3 +1,9 @@
+/*
+AI Assistance Disclosure:
+Tool: OpenAI ChatGPT via Codex CLI, date: 2025-11-10
+Scope: Extended search to include topics/data structures/tags/category with partial, case-insensitive matching.
+Author review: Preserved existing filters and aggregation; acknowledged regex trade-offs.
+*/
 import { Inject, Injectable } from '@nestjs/common';
 import { Collection, Document, Filter } from 'mongodb';
 import { MONGO_COLLECTION } from '../mongodb/mongo.provider';

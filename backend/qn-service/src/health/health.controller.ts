@@ -1,3 +1,9 @@
+/*
+AI Assistance Disclosure:
+Tool: OpenAI ChatGPT via Codex CLI, date: 2025-11-10
+Scope: Implemented public health endpoints (/healthz, /health) with MongoDB ping.
+Author review: Checked response shape and error handling; left unauthenticated by design.
+*/
 import { Controller, Get } from '@nestjs/common';
 import { Inject } from '@nestjs/common';
 import { Db } from 'mongodb';
@@ -26,4 +32,3 @@ export class HealthController {
     };
   }
 }
-
