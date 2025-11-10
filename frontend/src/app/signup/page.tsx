@@ -84,14 +84,24 @@ export default function SignupPage() {
                     required
                 />
 
-                <input
-                    type="password"
-                    placeholder="Password (min 6 chars)"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full border rounded px-3 py-2"
-                    required
-                />
+                <div className="password-container">
+                    <input
+                        type="password"
+                        placeholder="Password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full border rounded px-3 py-2"
+                        onFocus={() => {document.getElementById('requirements')!.style.display = 'block'}}
+                        onBlur={() => {document.getElementById('requirements')!.style.display = 'none'}}
+                        required
+                    />
+                    <div id="requirements" style={{display: 'none', fontSize: '1rem', color: '#666', marginTop: '0.5rem'}}>
+                        • At least 12 characters<br />
+                        • 1 uppercase letter<br />
+                        • 1 number<br />
+                        • 1 special character
+                    </div>
+                </div>
 
                 <button
                     type="submit"
