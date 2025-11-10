@@ -11,7 +11,6 @@ import CommentPanel from "../../components/room/CommentPanel";
 import MonacoCollabTextArea from "../../components/room/MonacoCollabTextArea";
 import LeaveButton from "../../components/room/LeaveButton";
 import { Session } from "@supabase/supabase-js";
-import { set } from "lib0/encoding.js";
 
 type Props = {
     params: Promise<{ roomId: string }>;
@@ -140,15 +139,16 @@ export default function RoomPage({ params }: Props) {
         };
         fetchPartnerName();
         fetchOwnName();
-    }, [partnerId, session]);
+    }, [partnerId, session, ownUserId]);
 
-    if (!roomId || !ok || !ownUserId || !partnerName || !ownName || loading)
+    if (!roomId || !ok || !ownUserId || !ownName || !partnerName || loading) {
         return <div className="p-8">Loading room...</div>;
+    }
 
     const token = session?.access_token;
 
     return (
-        <main className="p-8 h-screen flex flex-col overflow-hidden select-none">
+        <main className="p-8 min-h-screen flex flex-col select-none">
             <div className="flex justify-between items-center mb-3">
                 <ProblemTitle
                     title={problem?.title || "Problem"}
@@ -191,13 +191,13 @@ export default function RoomPage({ params }: Props) {
                 )}
             </div>
             {token && (
-                <div className="flex-grow overflow-hidden">
+                <div className="mb-6" style={{ height: "600px" }}>
                     <MonacoCollabTextArea
                         roomId={roomId}
                         token={token}
                         ownUserId={ownUserId}
-                        ownName={ownName}
-                        partnerName={partnerName}
+                        ownName={ownName ?? "You"}
+                        partnerName={partnerName ?? "Partner"}
                     />
                 </div>
             )}
@@ -207,14 +207,8 @@ export default function RoomPage({ params }: Props) {
                     <CommentPanel roomId={roomId} token={token} />
                 </div>
             )} */}
-            {/* Question Panel (right side) */}
-            <div
-                className="grow h-full overflow-auto"
-                style={{
-                    minWidth: "250px",
-                    maxHeight: "100%",
-                }}
-            >
+            {/* Question Panel (below editor) */}
+            <div className="mb-8">
                 <QuestionPanel
                     title={problem?.title}
                     description={problem?.description}

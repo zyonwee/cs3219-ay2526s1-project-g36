@@ -44,7 +44,7 @@ export default function FindMatchButton({ problem }) {
       difficulty: String(problem.difficulty || "medium").toLowerCase(),
       topics: [problem.topic].filter(Boolean),
     }),
-    [problem]
+    [problem, userId]
   );
 
   const isQueuing = status === "connecting" || status === "queued";
