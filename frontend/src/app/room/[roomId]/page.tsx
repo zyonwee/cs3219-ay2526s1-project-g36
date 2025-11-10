@@ -5,6 +5,7 @@ import { getSession, logout } from "../../../../lib/auth";
 import { useRouter } from "next/navigation";
 import { useRequireAuth } from "../../../../lib/useRequireAuth";
 import ProblemTitle from "../../components/room/ProblemTitle";
+import QuestionPanel from "../../components/room/QuestionPanel";
 import CodeEditorPanel from "../../components/room/CodeEditorPanel";
 import CommentPanel from "../../components/room/CommentPanel";
 import MonacoCollabTextArea from "../../components/room/MonacoCollabTextArea";
@@ -21,6 +22,12 @@ export default function RoomPage({ params }: Props) {
     const router = useRouter();
     const [session, setSession] = useState<Session | null>(null);
     const [loading, setLoading] = useState(true);
+    const [problem, setProblem] = useState<{
+        title: string;
+        description: string;
+        difficulty: string;
+        acceptanceRate?: number | string;
+    } | null>(null);
     const [dividerX, setDividerX] = useState(60); // %
     const isDragging = useRef(false);
 
@@ -44,6 +51,36 @@ export default function RoomPage({ params }: Props) {
         };
         loadSession();
     }, [ok]);
+
+    // Load selected problem from localStorage (set when user clicked Find Match)
+    useEffect(() => {
+        try {
+            const raw = typeof window !== 'undefined' ? localStorage.getItem('currentProblem') : null;
+            if (raw) {
+                const p = JSON.parse(raw);
+                if (p && typeof p === 'object') {
+                    setProblem({
+                        title: p.name || p.title || 'Problem',
+                        description: p.description || '',
+                        difficulty: String(p.difficulty || 'medium'),
+                        acceptanceRate: p.acceptanceRate ?? p.acceptance_rate ?? undefined,
+                    });
+                }
+            }
+        } catch {}
+    }, []);
+
+    // Record attempt start time when entering room
+    useEffect(() => {
+        try {
+            if (typeof window !== 'undefined') {
+                const existing = localStorage.getItem('attemptStart');
+                if (!existing) {
+                    localStorage.setItem('attemptStart', new Date().toISOString());
+                }
+            }
+        } catch {}
+    }, []);
 
     // Divider drag logic
     const handleMouseDown = (e: React.MouseEvent) => {
@@ -86,16 +123,25 @@ export default function RoomPage({ params }: Props) {
 
     return (
         <main className="p-8 h-screen flex flex-col overflow-hidden select-none">
-            <div className="flex justify-between items-center mb-6">
-                {/* TODO: Problem metadata display */}
+            <div className="flex justify-between items-center mb-3">
                 <ProblemTitle
-                    title="Reverse Linked List"
-                    description="Implement a function that reverses a linked list."
-                    difficulty="Medium"
-                    acceptanceRate="62%"
+                    title={problem?.title || 'Problem'}
+                    description={problem?.description || 'Open the question panel to view details.'}
+                    difficulty={(problem?.difficulty ?? 'medium').toString()}
+                    acceptanceRate={
+                        problem?.acceptanceRate !== undefined
+                            ? `${problem.acceptanceRate}`
+                            : '—'
+                    }
                 />
                 <LeaveButton />
             </div>
+            {/* Inline hint when no problem found */}
+            {!problem && (
+                <div className="mb-4 text-sm text-gray-600">
+                    No question selected. If you matched from a problem card, it will show here.
+                </div>
+            )}
 
             {token && (
                 <div
@@ -129,17 +175,22 @@ export default function RoomPage({ params }: Props) {
                         }}
                     ></div>
 
-                    {/* Comment Panel */}
-                    {/* <div
-                        className="grow h-full"
+                    {/* Question Panel (right side) */}
+                    <div
+                        className="grow h-full overflow-auto"
                         style={{
                             width: `${100 - dividerX}%`,
                             minWidth: "250px",
-                            maxHeight: "400px",
+                            maxHeight: "100%",
                         }}
                     >
-                        <CommentPanel roomId={roomId} token={token} />
-                    </div> */}
+                        <QuestionPanel
+                            title={problem?.title}
+                            description={problem?.description}
+                            difficulty={problem?.difficulty}
+                            acceptanceRate={typeof problem?.acceptanceRate === 'number' ? problem?.acceptanceRate : undefined}
+                        />
+                    </div>
                 </div>
             )}
         </main>

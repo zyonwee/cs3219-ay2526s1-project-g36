@@ -1,12 +1,29 @@
 # Question Service — Query Guide
 
-This service exposes a single authenticated endpoint to search and list questions stored in MongoDB.
+This service exposes endpoints to search questions and record/fetch user question attempts, backed by MongoDB.
 
 Base URL: `http://localhost:${PORT}` (defaults to `3000`)
 
-Auth: All routes require `Authorization: Bearer <JWT>` (guarded by `BearerAuthGuard`).
+Auth: Most routes require `Authorization: Bearer <JWT>` (guarded by `BearerAuthGuard`). The health endpoint is public.
 
-## Endpoint
+## Health
+
+GET `/healthz` (public)
+
+- Returns basic liveness and Mongo connectivity.
+- Response example:
+
+```json
+{
+  "status": "ok",
+  "uptime": 12.345,
+  "service": "QuestionService",
+  "mongo": { "status": "ok" },
+  "timestamp": "2025-01-01T00:00:00.000Z"
+}
+```
+
+## Endpoints
 
 GET `/questions`
 
@@ -122,6 +139,41 @@ curl -H "Authorization: Bearer $TOKEN" \
   "http://localhost:3000/questions/11"
 ```
 
+GET `/questions/:id`
+
+- Returns a single question by exact numeric `id`.
+- Response shape: `QuestionWithPoints`
+
+Example:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:3000/questions/11"
+```
+
+POST `/attempts`
+
+- Records a question attempt.
+- Body:
+
+```json
+{
+  "question_id": "11",            // required (string or number)
+  "status": "completed|left",     // optional, defaults to "left"
+  "started_at": "ISO-8601",       // optional, defaults to now
+  "submitted_at": "ISO-8601",     // optional, defaults to now
+  "question": { /* snapshot */ }   // optional arbitrary question metadata
+}
+```
+
+Response: the created document, including `user_id` from the JWT, and `created_at`.
+
+GET `/attempts`
+
+- Returns paginated attempts for the authenticated user.
+- Query params: `page`, `pageSize` (defaults 1 and 20).
+- Response: `{ items, total, page, pageSize }`.
+
 ## Behavior Notes
 
 - Title search via `q` is case-sensitive and partial.
@@ -144,3 +196,43 @@ The service reads Mongo settings from env vars (see `.env`):
 - Controller: `src/questions/questions.controller.ts`
 - Service: `src/questions/questions.service.ts`
 - Mongo provider: `src/mongodb/mongo.provider.ts`
+- Attempts: `src/attempts/*`
+- Health: `src/health/*`
+
+## Seeding Attempts
+
+You can mass-populate attempts for the authenticated user using the Node script:
+
+Requirements: Node.js v18+
+
+1) Set a valid JWT in `QN_TOKEN` (Supabase user access_token)
+
+Windows CMD:
+```
+set QN_TOKEN=eyJ...
+```
+
+PowerShell:
+```
+$env:QN_TOKEN="eyJ..."
+```
+
+Bash:
+```
+export QN_TOKEN=eyJ...
+```
+
+Optional vars:
+- `QN_BASE_URL` (default `http://localhost:3000`)
+- `COUNT` number of attempts (default `50`)
+
+Run:
+```
+node backend/qn-service/scripts/seed_attempts.js
+```
+or
+```
+node backend/qn-service/scripts/seed_attempts.js 100
+```
+
+The script fetches questions and posts randomized attempts (`completed` or `left`) with realistic timestamps within the past 6 months.
