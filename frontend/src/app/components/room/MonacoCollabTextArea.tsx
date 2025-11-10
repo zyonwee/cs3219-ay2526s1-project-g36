@@ -14,6 +14,7 @@ type RoomProps = {
     ownUserId: string;
     ownName: string;
     partnerName: string;
+    showHistory?: boolean;
 };
 
 type Change = {
@@ -70,6 +71,7 @@ export default function MonacoCollabTextArea({
     ownUserId,
     ownName,
     partnerName,
+    showHistory = true,
 }: RoomProps) {
     const { theme } = useTheme();
     const serverUrl = process.env.NEXT_PUBLIC_COLLAB_WS_URL!;
@@ -389,198 +391,104 @@ export default function MonacoCollabTextArea({
                 </div>
             </div>
 
-            {/* Right Side: Edit History */}
-            <div
-                style={{
-                    width: "280px",
-                    display: "flex",
-                    flexDirection: "column",
-                    backgroundColor: theme.card.background,
-                    border: `1px solid ${theme.border}`,
-                    borderRadius: "8px",
-                    padding: "12px",
-                    overflow: "hidden",
-                }}
-            >
-                <h2
-                    style={{
-                        fontWeight: 600,
-                        marginBottom: "12px",
-                        color: theme.id === "dark" ? "#f3f4f6" : "#111827",
-                        fontSize: "1rem",
-                        flexShrink: 0,
-                    }}
-                >
-                    Edit History
-                </h2>
+            {showHistory && (
                 <div
                     style={{
-                        flex: 1,
-                        overflowY: "auto",
-                        minHeight: 0,
+                        width: "280px",
+                        display: "flex",
+                        flexDirection: "column",
+                        backgroundColor: theme.card.background,
+                        border: `1px solid ${theme.border}`,
+                        borderRadius: "8px",
+                        padding: "12px",
+                        overflow: "hidden",
                     }}
                 >
-                    {history.length === 0 ? (
-                        <p
-                            style={{
-                                fontSize: "0.875rem",
-                                color:
-                                    theme.id === "dark" ? "#9ca3af" : "#6b7280",
-                            }}
-                        >
-                            No edits yet.
-                        </p>
-                    ) : (
-                        <ul
-                            style={{ listStyle: "none", padding: 0, margin: 0 }}
-                        >
-                            {history.map((record, i) => (
-                                <li
-                                    key={i}
-                                    style={{
-                                        borderBottom: `1px solid ${theme.border}`,
-                                        paddingBottom: "8px",
-                                        marginBottom: "8px",
-                                        fontSize: "0.85rem",
-                                    }}
-                                >
-                                    <div
+                    <h2
+                        style={{
+                            fontWeight: 600,
+                            marginBottom: "12px",
+                            color: theme.id === "dark" ? "#f3f4f6" : "#111827",
+                            fontSize: "1rem",
+                            flexShrink: 0,
+                        }}
+                    >
+                        Edit History
+                    </h2>
+                    <div
+                        style={{
+                            flex: 1,
+                            overflowY: "auto",
+                            minHeight: 0,
+                        }}
+                    >
+                        {history.length === 0 ? (
+                            <p
+                                style={{
+                                    fontSize: "0.875rem",
+                                    color:
+                                        theme.id === "dark" ? "#9ca3af" : "#6b7280",
+                                }}
+                            >
+                                No edits yet.
+                            </p>
+                        ) : (
+                            <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+                                {history.map((record, i) => (
+                                    <li
+                                        key={i}
                                         style={{
-                                            fontSize: "0.8rem",
-                                            color:
-                                                theme.id === "dark"
-                                                    ? "#d1d5db"
-                                                    : "#4b5563",
-                                            marginBottom: "6px",
+                                            borderBottom: `1px solid ${theme.border}`,
+                                            paddingBottom: "8px",
+                                            marginBottom: "8px",
+                                            fontSize: "0.85rem",
                                         }}
                                     >
-                                        <strong
+                                        <div
                                             style={{
-                                                color:
-                                                    theme.id === "dark"
-                                                        ? "#f3f4f6"
-                                                        : "#111827",
-                                                fontWeight: 600,
+                                                fontSize: "0.8rem",
+                                                color: theme.id === "dark" ? "#d1d5db" : "#4b5563",
+                                                marginBottom: "6px",
                                             }}
                                         >
-                                            {resolveUsername(
-                                                record.userId,
-                                                ownUserId,
-                                                ownName,
-                                                partnerName
-                                            )}
-                                        </strong>{" "}
-                                        • {formatRelativeTime(record.timestamp)}
-                                    </div>
-                                    <button
-                                        onClick={() => {
-                                            if (status === "connected") {
-                                                setSelectedRevertTimestamp(
-                                                    record.timestamp
-                                                );
-                                                setRevertModalOpen(true);
-                                            }
-                                        }}
-                                        disabled={status !== "connected"}
-                                        style={{
-                                            marginTop: "4px",
-                                            marginBottom: "8px",
-                                            padding: "5px 10px",
-                                            fontSize: "0.75rem",
-                                            backgroundColor:
-                                                status !== "connected"
-                                                    ? "#9ca3af"
-                                                    : "#3b82f6",
-                                            color: "#ffffff",
-                                            border: "none",
-                                            borderRadius: "6px",
-                                            cursor:
-                                                status !== "connected"
-                                                    ? "not-allowed"
-                                                    : "pointer",
-                                            transition: "background-color 0.2s",
-                                            fontWeight: 500,
-                                            opacity:
-                                                status !== "connected"
-                                                    ? 0.5
-                                                    : 1,
-                                        }}
-                                        onMouseEnter={(e) => {
-                                            if (status === "connected") {
-                                                e.currentTarget.style.backgroundColor =
-                                                    "#2563eb";
-                                            }
-                                        }}
-                                        onMouseLeave={(e) => {
-                                            if (status === "connected") {
-                                                e.currentTarget.style.backgroundColor =
-                                                    "#3b82f6";
-                                            }
-                                        }}
-                                    >
-                                        Revert to this version
-                                    </button>
-                                    {record.changes.map(
-                                        (change: any, j: number) => {
-                                            const isInsert =
-                                                change.type === "insert";
-                                            const changeColor = isInsert
-                                                ? "#22c55e"
-                                                : "#ef4444";
-                                            const bgColor = isInsert
-                                                ? "#22c55e20"
-                                                : "#ef444420";
+                                            <strong style={{ color: theme.id === "dark" ? "#f3f4f6" : "#111827", fontWeight: 600 }}>
+                                                {resolveUsername(record.userId, ownUserId, ownName, partnerName)}
+                                            </strong>{" "}
+                                            • {formatRelativeTime(record.timestamp)}
+                                        </div>
+                                        <button
+                                            onClick={() => {
+                                                if (status === "connected") {
+                                                    setSelectedRevertTimestamp(record.timestamp);
+                                                    setRevertModalOpen(true);
+                                                }
+                                            }}
+                                            disabled={status !== "connected"}
+                                            style={{ marginTop: "4px", marginBottom: "8px", padding: "5px 10px", fontSize: "0.75rem", backgroundColor: status !== "connected" ? "#9ca3af" : "#3b82f6", color: "#ffffff", border: "none", borderRadius: "6px", cursor: status !== "connected" ? "not-allowed" : "pointer", transition: "background-color 0.2s", fontWeight: 500, opacity: status !== "connected" ? 0.5 : 1 }}
+                                            onMouseEnter={(e) => { if (status === "connected") { (e.currentTarget as any).style.backgroundColor = "#2563eb"; } }}
+                                            onMouseLeave={(e) => { if (status === "connected") { (e.currentTarget as any).style.backgroundColor = "#3b82f6"; } }}
+                                        >
+                                            Revert to this version
+                                        </button>
+                                        {record.changes.map((change: any, j: number) => {
+                                            const isInsert = change.type === "insert";
+                                            const changeColor = isInsert ? "#22c55e" : "#ef4444";
+                                            const bgColor = isInsert ? "#22c55e20" : "#ef444420";
 
                                             return (
-                                                <div
-                                                    key={j}
-                                                    style={{
-                                                        marginLeft: "8px",
-                                                        fontSize: "0.8rem",
-                                                        color:
-                                                            theme.id === "dark"
-                                                                ? "#e5e7eb"
-                                                                : "#374151",
-                                                        marginBottom: "4px",
-                                                    }}
-                                                >
-                                                    <span
-                                                        style={{
-                                                            color: changeColor,
-                                                            fontWeight: 600,
-                                                        }}
-                                                    >
-                                                        {isInsert
-                                                            ? "Added"
-                                                            : "Removed"}
-                                                    </span>{" "}
-                                                    Line {change.line}:Column{" "}
-                                                    {change.col} →{" "}
-                                                    <code
-                                                        style={{
-                                                            backgroundColor:
-                                                                bgColor,
-                                                            color: changeColor,
-                                                            padding: "2px 5px",
-                                                            borderRadius: "4px",
-                                                            fontSize: "0.75rem",
-                                                            fontFamily:
-                                                                "monospace",
-                                                            border: `1px solid ${changeColor}40`,
-                                                        }}
-                                                    >
-                                                        {change.snippet}
-                                                    </code>
+                                                <div key={j} style={{ marginLeft: "8px", fontSize: "0.8rem", color: theme.id === "dark" ? "#e5e7eb" : "#374151", marginBottom: "4px" }}>
+                                                    <span style={{ color: changeColor, fontWeight: 600 }}>{isInsert ? "Added" : "Removed"}</span>{" "}
+                                                    Line {change.line}:Column {change.col} → <code style={{ backgroundColor: bgColor, color: changeColor, padding: "2px 5px", borderRadius: "4px", fontSize: "0.75rem", fontFamily: "monospace", border: `1px solid ${changeColor}40` }}>{change.snippet}</code>
                                                 </div>
                                             );
-                                        }
-                                    )}
-                                </li>
-                            ))}
-                        </ul>
-                    )}
+                                        })}
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
                 </div>
-            </div>
+            )}
 
             {/* Revert Confirmation Modal */}
             {revertModalOpen && selectedRevertTimestamp !== null && (

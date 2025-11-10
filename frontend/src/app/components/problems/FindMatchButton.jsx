@@ -13,6 +13,7 @@ export default function FindMatchButton({ problem }) {
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState(null);
+  const [showSetupModal, setShowSetupModal] = useState(false);
 
   useEffect(() => {
     const fetchSession = async () => {
@@ -34,7 +35,10 @@ export default function FindMatchButton({ problem }) {
     token: token,
     onMatched: ({ roomId, matchedUserId }) => {
       console.log(`Matched! Room ID: ${roomId}, Matched User ID: ${matchedUserId}`);
-      // navigation or toast can be placed here if desired
+      // show a brief setup modal to indicate server is provisioning the room
+      setShowSetupModal(true);
+      // navigation to the room is handled by the matching hook; the modal
+      // will be removed when the page changes (component unmounts).
     },
   });
 
@@ -77,6 +81,11 @@ export default function FindMatchButton({ problem }) {
     console.log("Leaving matchmaking");
     leaveQueue();
   };
+
+  // Close modal if user cancels matchmaking or leaves queue
+  useEffect(() => {
+    if (status === "idle") setShowSetupModal(false);
+  }, [status]);
 
   return (
     <>
@@ -202,6 +211,89 @@ export default function FindMatchButton({ problem }) {
           </div>
         </div>
       </div>
+
+      {/* Setup modal shown briefly when a match is found and the backend is creating the room */}
+      {showSetupModal && (
+        <div
+          aria-hidden={false}
+          style={{
+            display: "flex",
+            position: "fixed",
+            inset: 0,
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 70,
+          }}
+        >
+          {/* dim the background to focus attention on the setup modal */}
+          <div
+            aria-hidden="true"
+            style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 70 }}
+          />
+
+          <div
+            role="dialog"
+            aria-modal="true"
+            style={{
+              position: "relative",
+              zIndex: 71,
+              width: "min(540px, 92%)",
+              padding: 28,
+              borderRadius: 12,
+              boxShadow: "0 12px 48px rgba(0,0,0,0.35)",
+              background: theme.background,
+              color: theme.text,
+              display: "flex",
+              flexDirection: "column",
+              gap: 18,
+              alignItems: "center",
+            }}
+          >
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, alignItems: "center" }}>
+              <div style={{ fontWeight: 800, fontSize: 18, color: theme.primary }}>
+                Setting up collaboration room
+              </div>
+              <div style={{ height: 28 }} />
+              <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "center" }}>
+                <div className="dots-spinner" />
+              </div>
+              <div style={{ fontSize: 14, color: theme.textSecondary, textAlign: "center", maxWidth: 420 }}>
+                Hang tight — creating a shared coding session for you and your peer.
+              </div>
+            </div>
+          </div>
+          <style>{`
+            .dots-spinner {
+              width: 64px;
+              height: 16px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              gap: 6px;
+            }
+            .dots-spinner::before,
+            .dots-spinner::after,
+            .dots-spinner > div {
+              content: '';
+              width: 10px;
+              height: 10px;
+              background: ${theme.primary};
+              border-radius: 50%;
+              display: inline-block;
+              animation: dots 0.9s infinite ease-in-out;
+            }
+            .dots-spinner > div { animation-delay: 0.15s }
+            .dots-spinner::before { animation-delay: 0s }
+            .dots-spinner::after { animation-delay: 0.3s }
+
+            @keyframes dots {
+              0% { transform: translateX(0) scale(1); opacity: 0.4 }
+              50% { transform: translateX(6px) scale(1.2); opacity: 1 }
+              100% { transform: translateX(0) scale(1); opacity: 0.4 }
+            }
+          `}</style>
+        </div>
+      )}
     </>
   );
 }

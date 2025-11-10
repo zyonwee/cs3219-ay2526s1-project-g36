@@ -1,14 +1,14 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { getSession, logout } from "../../../../lib/auth";
 import { useRouter } from "next/navigation";
 import { useRequireAuth } from "../../../../lib/useRequireAuth";
 import ProblemTitle from "../../components/room/ProblemTitle";
-import QuestionPanel from "../../components/room/QuestionPanel";
-import CodeEditorPanel from "../../components/room/CodeEditorPanel";
-import CommentPanel from "../../components/room/CommentPanel";
+// QuestionPanel is inlined inside QuestionDropdown now
+import QuestionDropdown from "../../components/room/QuestionDropdown";
 import MonacoCollabTextArea from "../../components/room/MonacoCollabTextArea";
+import EditHistory from "../../components/room/EditHistory";
 import LeaveButton from "../../components/room/LeaveButton";
 import { Session } from "@supabase/supabase-js";
 
@@ -32,6 +32,10 @@ export default function RoomPage({ params }: Props) {
     const [partnerId, setPartnerId] = useState<string | null>(null);
     const [ownName, setOwnName] = useState<string | null>(null);
     const [partnerName, setPartnerName] = useState<string | null>(null);
+
+    // Previously the UI had a resizable right-hand comments panel.
+    // Per the user's request, simplify the layout: remove the right-side
+    // comment panel and divider so the collab editor occupies full width.
 
     // Resolve params safely
     useEffect(() => {
@@ -205,36 +209,39 @@ export default function RoomPage({ params }: Props) {
                     </span>
                 )}
             </div>
+            {/* Question dropdown is shown inside the left column above the editor */}
+
             {token && (
-                <div className="mb-6" style={{ height: "600px" }}>
-                    <MonacoCollabTextArea
-                        roomId={roomId}
-                        token={token}
-                        ownUserId={ownUserId}
-                        ownName={ownName ?? "You"}
-                        partnerName={partnerName ?? "Partner"}
-                    />
+                <div className="flex flex-row flex-grow overflow-hidden" style={{ minHeight: 0 }}>
+                    {/* Left column: question card + editor */}
+                    <div className="flex flex-col flex-grow overflow-hidden" style={{ minHeight: 0 }}>
+                        <div style={{ zIndex: 2 }}>
+                            <QuestionDropdown
+                                title={problem?.title}
+                                description={problem?.description}
+                                difficulty={problem?.difficulty}
+                                acceptanceRate={
+                                    typeof problem?.acceptanceRate === "number"
+                                        ? problem?.acceptanceRate
+                                        : undefined
+                                }
+                            />
+                        </div>
+
+                        <div className="flex-grow h-full overflow-hidden" style={{ minWidth: 300 }}>
+                            <MonacoCollabTextArea roomId={roomId} token={token} ownUserId={ownUserId!} ownName={ownName ?? "You"} partnerName={partnerName ?? "Partner"} showHistory={false} />
+                        </div>
+                    </div>
+
+                    {/* Right column: Edit history (fixed) */}
+                    <div style={{ width: 340, minWidth: 280, marginLeft: 12 }}>
+                        {/* Make the edit history fill the viewport height so it appears to occupy the full right side */}
+                        <div style={{ position: "sticky", top: 0, alignSelf: "start", height: "100vh", overflow: "auto", boxSizing: "border-box", paddingTop: 32 }}>
+                            <EditHistory roomId={roomId} token={token} ownUserId={ownUserId!} ownName={ownName} partnerName={partnerName} />
+                        </div>
+                    </div>
                 </div>
             )}
-            \{/* Comment Panel - Kept for potential future use */}
-            {/* {token && (
-                <div className="grow h-full" style={{ minWidth: "250px" }}>
-                    <CommentPanel roomId={roomId} token={token} />
-                </div>
-            )} */}
-            {/* Question Panel (below editor) */}
-            <div className="mb-8">
-                <QuestionPanel
-                    title={problem?.title}
-                    description={problem?.description}
-                    difficulty={problem?.difficulty}
-                    acceptanceRate={
-                        typeof problem?.acceptanceRate === "number"
-                            ? problem?.acceptanceRate
-                            : undefined
-                    }
-                />
-            </div>
         </main>
     );
 }

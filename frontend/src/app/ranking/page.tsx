@@ -18,12 +18,14 @@ export default function RankingPage() {
   const { theme } = useTheme();
   const [users, setUsers] = useState<User[]>([]);
   const [myRank, setMyRank] = useState<number | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10; // number of rows per page
 
   useEffect(() => {
     let mounted = true;
     (async () => {
+  setIsLoading(true);
       try {
         // Get current user id from Supabase session
         const {
@@ -62,7 +64,10 @@ export default function RankingPage() {
         }
       } catch (e) {
         console.error("Error fetching ranking:", e);
+      } finally {
+        setIsLoading(false);
       }
+      
     })();
     return () => {
       mounted = false;
@@ -90,6 +95,7 @@ export default function RankingPage() {
   };
 
   return (
+    <>
     <div
       className="px-6 min-h-screen"
       style={{
@@ -108,6 +114,17 @@ export default function RankingPage() {
   {/* User's current rank on the leaderboard (computed from Supabase) */}
   <UserRank rank={myRank} />
       </div>
+
+      {/* Loading overlay when waiting for Supabase */}
+      {isLoading && (
+        <div className="fixed inset-0 flex items-center justify-center" style={{ zIndex: 60 }}>
+          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.45)' }} />
+          <div style={{ backgroundColor: theme.card.background, border: `1px solid ${theme.border}`, padding: 20, borderRadius: 10, boxShadow: theme.card.shadow, zIndex: 70, minWidth: 240, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 36, height: 36, border: `4px solid ${theme.border}`, borderTop: `4px solid ${theme.accent}`, borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+            <div style={{ color: theme.text, fontWeight: 600 }}>Loading rankings…</div>
+          </div>
+        </div>
+      )}
 
 
       <div
@@ -205,5 +222,12 @@ export default function RankingPage() {
         </button>
       </div>
     </div>
+    <style jsx>{`
+      @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+    `}</style>
+    </>
   );
 }
