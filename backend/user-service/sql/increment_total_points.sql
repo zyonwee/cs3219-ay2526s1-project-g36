@@ -8,7 +8,8 @@ begin
   -- Try to update existing profile
   -- Note: the profiles table in this project uses `user_id` as the PK column.
   update public.profiles
-  set total_points = coalesce(total_points, 0) + p_delta
+  set total_points = coalesce(total_points, 0) + p_delta,
+      questions_completed = coalesce(questions_completed, 0) + 1
   where user_id = p_user_id;
 
   -- If no row was updated, throw an error instead of inserting

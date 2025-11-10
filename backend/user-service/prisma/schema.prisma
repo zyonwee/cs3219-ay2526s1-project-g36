@@ -10,13 +10,14 @@ datasource db {
 }
 
 model Profile {
-  email        String  @unique @db.VarChar
-  user_id      String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  first_name   String? @db.VarChar
-  last_name    String? @db.VarChar
-  username     String  @unique
-  total_points BigInt  @default(0)
-  users        users   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  email               String  @unique @db.VarChar
+  user_id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  first_name          String? @db.VarChar
+  last_name           String? @db.VarChar
+  username            String  @unique
+  total_points        BigInt  @default(0)
+  questions_completed BigInt  @default(0)
+  users               users   @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@map("profiles")
   @@schema("public")
