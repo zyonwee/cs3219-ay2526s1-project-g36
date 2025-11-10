@@ -5,7 +5,6 @@ import { backendJson } from "../../../lib/backend";
 import { supabaseBrowser } from "../../../utils/supabase/client";
 import TopNavBar from "../components/navbar/TopNavBar";
 import ProfileForm from "../components/profile/ProfileForm";
-import QuestionHistory from "../components/profile/QuestionHistory";
 import { useTheme } from "../../../context/ThemeContext";
 import { useRequireAuth } from '../../../lib/useRequireAuth';
 import { getToken } from "../../../lib/auth";
@@ -133,7 +132,7 @@ export default function ProfilePage() {
           setLastName={setLastName}
           namePreview={namePreview}
         />
-        <QuestionHistory theme={theme} />
+  {/* Question history removed per request */}
       </div>
     </main>
   );
