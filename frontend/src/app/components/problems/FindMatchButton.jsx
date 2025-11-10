@@ -40,6 +40,7 @@ export default function FindMatchButton({ problem }) {
       userId: session?.user?.id,
       difficulty: String(problem.difficulty || "medium").toLowerCase(),
       topics: [problem.topic].filter(Boolean),
+      questionId: problem.id ?? problem._id ?? problem.name,
     }),
     [problem]
   );
