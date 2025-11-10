@@ -106,9 +106,21 @@ export default function RoomPage({ params }: Props) {
     useEffect(() => {
         if (!partnerId || !session) return;
 
+        const userServiceUrl = process.env.NEXT_PUBLIC_USER_SERVICE_URL;
+        if (!userServiceUrl) {
+            // warn rather than error so Next dev overlay doesn't treat this as a runtime error
+            // Missing the user service URL means we cannot fetch usernames from the user-service,
+            // but the room UI can still render (we'll show IDs/placeholders).
+            // eslint-disable-next-line no-console
+            console.warn('NEXT_PUBLIC_USER_SERVICE_URL is not set. profile fetches will fail.');
+            // allow rendering the room even if the user-service URL is missing
+            setLoading(false);
+            return;
+        }
+
         const fetchOwnName = async () => {
             const response = await fetch(
-                `${process.env.NEXT_PUBLIC_USER_SERVICE_URL}/profile/me`,
+                    `${userServiceUrl}/profile/me`,
                 {
                     headers: {
                         Authorization: `Bearer ${session?.access_token}`,
@@ -124,7 +136,7 @@ export default function RoomPage({ params }: Props) {
 
         const fetchPartnerName = async () => {
             const response = await fetch(
-                `${process.env.NEXT_PUBLIC_USER_SERVICE_URL}/profile/username?userId=${partnerId}`,
+                    `${userServiceUrl}/profile/username?userId=${partnerId}`,
                 {
                     headers: {
                         Authorization: `Bearer ${session?.access_token}`,
@@ -141,7 +153,10 @@ export default function RoomPage({ params }: Props) {
         fetchOwnName();
     }, [partnerId, session, ownUserId]);
 
-    if (!roomId || !ok || !ownUserId || !ownName || !partnerName || loading) {
+    // Render the room as soon as we have the roomId, auth state and ownUserId.
+    // Don't block rendering on username lookups (ownName/partnerName) because those
+    // are fetched asynchronously and may fail if the user-service URL is not configured.
+    if (!roomId || !ok || !ownUserId || loading) {
         return <div className="p-8">Loading room...</div>;
     }
 

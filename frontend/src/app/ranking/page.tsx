@@ -5,36 +5,68 @@ import { useTheme } from "../../../context/ThemeContext";
 import RankingRow from "../components/ranking/RankingRow";
 import TopNavBar from "../components/navbar/TopNavBar";
 import UserRank from "../components/common/UserRank";
+import { supabaseBrowser } from "../../../utils/supabase/client";
 
 interface User {
   username: string;
   solved: number;
   rating: number;
+  userId?: string;
 }
 
 export default function RankingPage() {
   const { theme } = useTheme();
   const [users, setUsers] = useState<User[]>([]);
+  const [myRank, setMyRank] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10; // number of rows per page
 
   useEffect(() => {
-    // Example mock data (replace with your backend fetch)
-    const mockUsers = [
-      { username: "Alice", solved: 120, rating: 2400 },
-      { username: "Bob", solved: 98, rating: 2200 },
-      { username: "Charlie", solved: 75, rating: 2000 },
-      { username: "Dylan", solved: 50, rating: 1900 },
-      { username: "Eve", solved: 45, rating: 1800 },
-      { username: "Frank", solved: 44, rating: 1790 },
-      { username: "Grace", solved: 42, rating: 1780 },
-      { username: "Leo", solved: 35, rating: 1730 },
-      { username: "Hank", solved: 40, rating: 1770 },
-      { username: "Ivy", solved: 38, rating: 1760 },
-      { username: "John", solved: 37, rating: 1750 },
-      { username: "Kathy", solved: 36, rating: 1740 },
-    ];
-    setUsers(mockUsers);
+    let mounted = true;
+    (async () => {
+      try {
+        // Get current user id from Supabase session
+        const {
+          data: { user: currentUser },
+        } = await supabaseBrowser.auth.getUser();
+
+        // Fetch profiles from Supabase and order by total_points desc
+        const { data, error } = await supabaseBrowser
+          .from("profiles")
+          .select("user_id, username, questions_completed, total_points")
+          .order("total_points", { ascending: false });
+
+        if (error) {
+          console.error("Failed to load leaderboard from Supabase:", error);
+          return;
+        }
+
+        if (!mounted || !data) return;
+
+        const mapped: User[] = data.map((row: any) => ({
+          userId: row.user_id ?? row.id ?? undefined,
+          username: row.username || "Anonymous",
+          solved: Number(row.questions_completed ?? 0),
+          rating: Number(row.total_points ?? 0),
+        }));
+
+        // Ensure sorted just in case
+        mapped.sort((a, b) => b.rating - a.rating);
+
+        setUsers(mapped);
+
+        // find current user's rank
+        if (currentUser && currentUser.id) {
+          const idx = mapped.findIndex((u) => u.userId === currentUser.id || u.username === currentUser.email);
+          setMyRank(idx >= 0 ? idx + 1 : null);
+        }
+      } catch (e) {
+        console.error("Error fetching ranking:", e);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   // Sort users by rating (desc) and assign ranks
@@ -66,15 +98,15 @@ export default function RankingPage() {
       }}
     >
       <TopNavBar />
-      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-6">
         <h1
           className="pt-6 text-3xl font-bold"
           style={{ color: theme.accent }}
         >
           Top Peers
         </h1>
-        {/* TODO Replace 5 with actual user rank logic */}
-        <UserRank rank={5} /> 
+  {/* User's current rank on the leaderboard (computed from Supabase) */}
+  <UserRank rank={myRank} />
       </div>
 
 
@@ -86,12 +118,7 @@ export default function RankingPage() {
         }}
       >
         <table className="w-full border-collapse table-fixed">
-            <colgroup>
-                <col style={{ width: "9%" }} />   {/* Rank */}
-                <col style={{ width: "30%" }} />  {/* Username */}
-                <col style={{ width: "20%" }} />  {/* Problems Solved */}
-                <col style={{ width: "20%" }} />  {/* Rating */}
-            </colgroup>
+      <colgroup><col style={{ width: "9%" }} /><col style={{ width: "30%" }} /><col style={{ width: "20%" }} /><col style={{ width: "20%" }} /></colgroup>
 
             <thead
                 style={{
