@@ -45,6 +45,12 @@ export function useMatching(opts: {
             if (onMatched) {
                 onMatched(data);
             }
+
+            sessionStorage.setItem(
+                `roommeta:${data.roomId}`,
+                JSON.stringify({ matchedUserId: data.matchedUserId })
+            );
+
             router.push(`/room/${data.roomId}`);
         });
 
