@@ -5,7 +5,6 @@ import { getSession, logout } from "../../../../lib/auth";
 import { useRouter } from "next/navigation";
 import { useRequireAuth } from "../../../../lib/useRequireAuth";
 import ProblemTitle from "../../components/room/ProblemTitle";
-// QuestionPanel is inlined inside QuestionDropdown now
 import QuestionDropdown from "../../components/room/QuestionDropdown";
 import MonacoCollabTextArea from "../../components/room/MonacoCollabTextArea";
 import EditHistory from "../../components/room/EditHistory";
@@ -32,10 +31,6 @@ export default function RoomPage({ params }: Props) {
     const [partnerId, setPartnerId] = useState<string | null>(null);
     const [ownName, setOwnName] = useState<string | null>(null);
     const [partnerName, setPartnerName] = useState<string | null>(null);
-
-    // Previously the UI had a resizable right-hand comments panel.
-    // Per the user's request, simplify the layout: remove the right-side
-    // comment panel and divider so the collab editor occupies full width.
 
     // Resolve params safely
     useEffect(() => {
@@ -112,10 +107,6 @@ export default function RoomPage({ params }: Props) {
 
         const userServiceUrl = process.env.NEXT_PUBLIC_USER_SERVICE_URL;
         if (!userServiceUrl) {
-            // warn rather than error so Next dev overlay doesn't treat this as a runtime error
-            // Missing the user service URL means we cannot fetch usernames from the user-service,
-            // but the room UI can still render (we'll show IDs/placeholders).
-            // eslint-disable-next-line no-console
             console.warn('NEXT_PUBLIC_USER_SERVICE_URL is not set. profile fetches will fail.');
             // allow rendering the room even if the user-service URL is missing
             setLoading(false);
@@ -157,9 +148,6 @@ export default function RoomPage({ params }: Props) {
         fetchOwnName();
     }, [partnerId, session, ownUserId]);
 
-    // Render the room as soon as we have the roomId, auth state and ownUserId.
-    // Don't block rendering on username lookups (ownName/partnerName) because those
-    // are fetched asynchronously and may fail if the user-service URL is not configured.
     if (!roomId || !ok || !ownUserId || loading) {
         return <div className="p-8">Loading room...</div>;
     }
