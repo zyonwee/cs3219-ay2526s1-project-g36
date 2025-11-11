@@ -1,99 +1,443 @@
+import { Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { SubscribeMessage, WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
+import { v4 as uuidv4 } from 'uuid';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-@WebSocketGateway({ namespace: '/matching' })
-export class MatchingGateway {
+type Difficulty = 'easy' | 'medium' | 'hard';
+
+interface QueueUser {
+  userId: string;
+  topics: string[];
+  socketId: string;
+  enqueuedAt: number;
+  totalPoints?: number; // fetched from supabase on enqueue
+  difficulty: Difficulty;
+}
+
+@WebSocketGateway({ namespace: '/matching', cors: { origin: '*' } })
+export class MatchingGateway implements OnModuleInit, OnModuleDestroy {
   @WebSocketServer()
   server: Server;
 
-  private queues: Record<string, Array<{ userId: string; topics: string[]; socketId: string }>> = {
+  private readonly logger = new Logger(MatchingGateway.name);
+
+  // queues keyed by difficulty
+  private queues: Record<Difficulty, QueueUser[]> = {
     easy: [],
     medium: [],
     hard: [],
   };
 
-  @SubscribeMessage('join-queue')
-  async handleJoinQueue(client: any, payload: { userId: string; difficulty: string; topics: string[] }) {
-    const { v4: uuidv4 } = await import('uuid'); 
-    this.enqueue(payload.userId, payload.difficulty, payload.topics, client.id, uuidv4);
+  private batchIntervalId: NodeJS.Timeout | null = null;
+  private isBatchRunning = false;
+
+  private difficultyIndex: Record<Difficulty, number> = {
+    easy: 0,
+    medium: 1,
+    hard: 2,
+  };
+
+  // Supabase client (may be null in non-supabase environments)
+  private supabase: SupabaseClient | null = null;
+
+  // Tweakable constants:
+  private POINTS_TOLERANCE = 10; // +/- points tolerance for points-based matching
+  private BRUTE_FORCE_AFTER_MS = 5 * 60 * 1000; // 5 minutes
+  private POINTS_MATCH_PRIORITY_WINDOW_MS = 30 * 1000; // optional: consider points earlier after X seconds (not required)
+
+  constructor() {
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_KEY;
+    if (url && key) {
+      this.supabase = createClient(url, key);
+    } else {
+      this.supabase = null;
+      this.logger.warn('Supabase not configured (SUPABASE_URL/SUPABASE_KEY missing). Profile point lookups will be skipped.');
+    }
   }
 
-  @SubscribeMessage('match:cancel')
-  handleCancelMatch(client: any) {
-    const removed = this.removeFromQueueBySocketId(client.id);
-    // Keep silent to match previous behaviour (no ack emitted).
-    console.log(`match:cancel from ${client.id} => removed=${removed}`);
+  handleConnection(client: Socket) {
+    this.logger.log(`Client connected: ${client.id}`);
   }
 
-  // Called automatically by socket.io when a client disconnects.
   handleDisconnect(client: Socket) {
     const removed = this.removeFromQueueBySocketId(client.id);
     if (removed) {
-      console.log(`Socket ${client.id} disconnected and was removed from queue`);
+      this.logger.log(`Socket ${client.id} disconnected and was removed from queue`);
     } else {
-      console.log(`Socket ${client.id} disconnected`);
+      this.logger.log(`Socket ${client.id} disconnected`);
     }
+  }
+
+  @SubscribeMessage('join-queue')
+  async handleJoinQueue(
+    client: Socket,
+    payload: { userId: string; difficulty: Difficulty; topics: string[] },
+  ) {
+    const { userId, difficulty, topics } = payload;
+    if (!userId || !difficulty || !Array.isArray(topics)) {
+      client.emit('joined-queue', { ok: false });
+      return;
+    }
+
+    // Fetch points from Supabase if configured (non-blocking, falls back to 0)
+    let totalPoints: number | undefined = undefined;
+    if (this.supabase) {
+      try {
+        const { data, error } = await this.supabase
+          .from('profiles')
+          .select('total_points')
+          .eq('id', userId)
+          .maybeSingle();
+        if (error) {
+          this.logger.warn(`Supabase fetch error for user ${userId}: ${error.message}`);
+          totalPoints = 0;
+        } else if (data && typeof (data as any).total_points !== 'undefined') {
+          totalPoints = Number((data as any).total_points) || 0;
+        } else {
+          totalPoints = 0;
+        }
+      } catch (err) {
+        this.logger.warn(`Supabase fetch exception for user ${userId}: ${(err as Error).message}`);
+        totalPoints = 0;
+      }
+    } else {
+      // Supabase not configured — default to 0 so matching still works
+      totalPoints = 0;
+    }
+
+    this.enqueue(userId, difficulty, topics, client.id, totalPoints);
+  }
+
+  @SubscribeMessage('match:cancel')
+  handleCancelMatch(client: Socket) {
+    const removed = this.removeFromQueueBySocketId(client.id);
+    client.emit('left-queue', { ok: removed });
+    this.logger.log(`Socket ${client.id} requested cancel => removed=${removed}`);
   }
 
   private enqueue(
     userId: string,
-    difficulty: string,
+    difficulty: Difficulty,
     topics: string[],
     socketId: string,
-    uuidv4: () => string
+    totalPoints?: number,
   ): void {
-    const user = { userId, topics, socketId };
+    const now = Date.now();
+    const user: QueueUser = { userId, topics, socketId, enqueuedAt: now, totalPoints, difficulty };
     this.queues[difficulty].push(user);
-    this.matchUsers(difficulty, uuidv4);
+
+    // Emit joined-queue exactly as before (frontend compatibility)
+    const position = this.queues[difficulty].findIndex((u) => u.socketId === socketId) + 1;
+    try {
+      this.server.to(socketId).emit('joined-queue', { ok: true, difficulty, position });
+    } catch (err) {
+      this.logger.warn(`Failed to emit joined-queue to ${socketId}: ${err}`);
+    }
+
+    // Immediately try to match this user
+    this.tryMatchForUser(user);
   }
 
-  private haveCommonTopics(topics1: string[], topics2: string[]): boolean {
-    return topics1.some((t) => topics2.includes(t));
+  private countCommonTopics(topics1: string[], topics2: string[]) {
+    const set2 = new Set(topics2);
+    let count = 0;
+    for (const t of topics1) if (set2.has(t)) count++;
+    return count;
   }
 
-  private matchUsers(difficulty: string, uuidv4: () => string): void {
-    const queue = this.queues[difficulty];
-    if (queue.length < 2) return;
+  /**
+   * Primary per-user matching routine. Follows priority:
+   * 1) same difficulty + common topics
+   * 2) same difficulty (ignore topics)
+   * 3) similar points (± POINTS_TOLERANCE) across queues (prefer same difficulty but allow others)
+   * 4) brute force after BRUTE_FORCE_AFTER_MS
+   */
+  private tryMatchForUser(user: QueueUser) {
+    // If user already removed from queue (race), bail
+    const stillHere = this.queues[user.difficulty].some((u) => u.socketId === user.socketId);
+    if (!stillHere) return;
 
-    const matchedPairs: Array<{ user1: any; user2: any }> = [];
+    const now = Date.now();
 
-    for (let i = 0; i < queue.length; i++) {
-      for (let j = i + 1; j < queue.length; j++) {
-        const u1 = queue[i];
-        const u2 = queue[j];
-        if (this.haveCommonTopics(u1.topics, u2.topics)) {
-          matchedPairs.push({ user1: u1, user2: u2 });
-          queue.splice(j, 1);
-          queue.splice(i, 1);
-          i--;
-          break;
+    // helper to gather candidates excluding the user itself
+    const gatherCandidates = () => {
+      const cands: { candidate: QueueUser; diff: Difficulty }[] = [];
+      for (const d of Object.keys(this.queues) as Difficulty[]) {
+        for (const u of this.queues[d]) {
+          if (u.socketId === user.socketId) continue;
+          cands.push({ candidate: u, diff: d });
+        }
+      }
+      return cands;
+    };
+
+    const candidates = gatherCandidates();
+    if (candidates.length === 0) return;
+
+    // Comparator: the lower the tuple, the better
+    const scoreTuple = (a: QueueUser, aDiff: Difficulty, b: QueueUser, bDiff: Difficulty) => {
+      const difficultyDistance = Math.abs(this.difficultyIndex[aDiff] - this.difficultyIndex[bDiff]);
+      const numCommonTopics = this.countCommonTopics(a.topics, b.topics);
+      const waitingSeconds = ((now - a.enqueuedAt) + (now - b.enqueuedAt)) / 1000;
+      // ordering: prefer smaller difficultyDistance, more common topics (so negative), larger waiting (so negative)
+      return [difficultyDistance, -numCommonTopics, -waitingSeconds] as const;
+    };
+
+    // 1) Try same difficulty + at least one common topic
+    let best: { cand: QueueUser; candDiff: Difficulty } | null = null;
+    let bestScore: readonly [number, number, number] | null = null;
+
+  for (const { candidate: cand, diff: candDiff } of candidates) {
+      if (candDiff !== user.difficulty) continue;
+      const common = this.countCommonTopics(user.topics, cand.topics);
+      if (common <= 0) continue;
+      const sc = scoreTuple(user, user.difficulty, cand, candDiff);
+      if (!bestScore || this.tupleIsBetter(sc, bestScore)) {
+        best = { cand, candDiff };
+        bestScore = sc;
+      }
+    }
+
+    // 2) If none, try same difficulty regardless of topics
+    if (!best) {
+      for (const { candidate: cand, diff: candDiff } of candidates) {
+        if (candDiff !== user.difficulty) continue;
+        const sc = scoreTuple(user, user.difficulty, cand, candDiff);
+        if (!bestScore || this.tupleIsBetter(sc, bestScore)) {
+          best = { cand, candDiff };
+          bestScore = sc;
         }
       }
     }
 
-    this.handleMatchedPairs(matchedPairs, uuidv4);
+    // 3) If still none, try points-based: find candidate(s) with roughly same totalPoints (± tolerance)
+    if (!best) {
+      const userPoints = typeof user.totalPoints === 'number' ? user.totalPoints : undefined;
+      if (typeof userPoints === 'number') {
+        // attempt to prefer same difficulty first, then others
+        let candidatesByPoints: { cand: QueueUser; candDiff: Difficulty }[] = [];
+  for (const { candidate: cand, diff: candDiff } of candidates) {
+          if (typeof cand.totalPoints !== 'number') continue;
+          if (Math.abs((cand.totalPoints ?? 0) - userPoints) <= this.POINTS_TOLERANCE) {
+            candidatesByPoints.push({ cand, candDiff });
+          }
+        }
+
+        // prefer same difficulty among point-matches
+        const sameDiff = candidatesByPoints.filter((c) => c.candDiff === user.difficulty);
+        const useList = sameDiff.length > 0 ? sameDiff : candidatesByPoints;
+
+        if (useList.length > 0) {
+          for (const { cand, candDiff } of useList) {
+            const sc = scoreTuple(user, user.difficulty, cand, candDiff);
+            if (!bestScore || this.tupleIsBetter(sc, bestScore)) {
+              best = { cand, candDiff };
+              bestScore = sc;
+            }
+          }
+        }
+      }
+    }
+
+    // 4) If still none and this user has been waiting more than BRUTE_FORCE_AFTER_MS, do brute force across all candidates
+    if (!best && now - user.enqueuedAt >= this.BRUTE_FORCE_AFTER_MS) {
+  for (const { candidate: cand, diff: candDiff } of candidates) {
+        const sc = scoreTuple(user, user.difficulty, cand, candDiff);
+        if (!bestScore || this.tupleIsBetter(sc, bestScore)) {
+          best = { cand, candDiff };
+          bestScore = sc;
+        }
+      }
+    }
+
+    if (!best) {
+      // nothing suitable found now
+      return;
+    }
+
+    const partner = best.cand;
+
+    // Remove both (check return values) - if removal fails, another thread matched them
+    const removedUser = this.removeFromQueueBySocketId(user.socketId);
+    const removedPartner = this.removeFromQueueBySocketId(partner.socketId);
+
+    if (!removedUser || !removedPartner) {
+      // somebody matched concurrently
+      this.logger.log(`Concurrent match conflict for ${user.userId} or ${partner.userId}, skipping`);
+      return;
+    }
+
+    const roomId = uuidv4();
+
+    // Emit matched - keep existing keys to avoid breaking frontend
+    // Add optional fields matchedUserPoints and yourPoints (frontend will ignore if not used)
+    try {
+      this.server.to(user.socketId).emit('matched', {
+        roomId,
+        matchedUserId: partner.userId,
+        matchedUserPoints: partner.totalPoints,
+        yourPoints: user.totalPoints,
+      });
+      this.server.to(partner.socketId).emit('matched', {
+        roomId,
+        matchedUserId: user.userId,
+        matchedUserPoints: user.totalPoints,
+        yourPoints: partner.totalPoints,
+      });
+    } catch (err) {
+      this.logger.warn(`Failed to emit matched event: ${err}`);
+    }
+
+    this.logger.log(
+      `Matched users: ${user.userId} ↔ ${partner.userId} in room ${roomId} (score: ${JSON.stringify(bestScore)})`,
+    );
   }
 
-  private handleMatchedPairs(pairs: Array<{ user1: any; user2: any }>, uuidv4: () => string): void {
-    pairs.forEach((pair) => {
-      const { user1, user2 } = pair;
-      const roomId = uuidv4();
-
-      this.server.to(user1.socketId).emit('matched', { roomId, matchedUserId: user2.userId });
-      this.server.to(user2.socketId).emit('matched', { roomId, matchedUserId: user1.userId });
-
-      console.log(`Matched users: ${user1.userId} ↔ ${user2.userId} in room ${roomId}`);
-    });
+  // utility comparator for tuple [a,b,c] where smaller is better, lexicographic
+  private tupleIsBetter(
+    a: readonly [number, number, number],
+    b: readonly [number, number, number],
+  ): boolean {
+    if (a[0] < b[0]) return true;
+    if (a[0] > b[0]) return false;
+    if (a[1] < b[1]) return true;
+    if (a[1] > b[1]) return false;
+    if (a[2] < b[2]) return true;
+    return false;
   }
 
   private removeFromQueueBySocketId(socketId: string): boolean {
-    for (const key of Object.keys(this.queues)) {
-      const idx = this.queues[key].findIndex((u) => u.socketId === socketId);
+    for (const d of Object.keys(this.queues) as Difficulty[]) {
+      const idx = this.queues[d].findIndex((u) => u.socketId === socketId);
       if (idx !== -1) {
-        this.queues[key].splice(idx, 1);
+        this.queues[d].splice(idx, 1);
         return true;
       }
     }
     return false;
+  }
+
+  /**
+   * Periodic batch matching preserved but emits same 'matched' event payload
+   * Uses simpler score but could be swapped to the same strategy above if you want.
+   */
+  public runBatchMatching() {
+    const allUsers: { user: QueueUser; diff: Difficulty }[] = [];
+    for (const d of Object.keys(this.queues) as Difficulty[]) {
+      for (const u of this.queues[d]) allUsers.push({ user: u, diff: d });
+    }
+
+    const now = Date.now();
+    const taken = new Set<string>();
+
+    const scoreForPair = (a: QueueUser, aDiff: Difficulty, b: QueueUser, bDiff: Difficulty) => {
+      const difficultyDistance = Math.abs(this.difficultyIndex[aDiff] - this.difficultyIndex[bDiff]);
+      const numCommonTopics = this.countCommonTopics(a.topics, b.topics);
+      const waitingSeconds = ((now - a.enqueuedAt) + (now - b.enqueuedAt)) / 1000;
+      return [difficultyDistance, -numCommonTopics, -waitingSeconds] as const;
+    };
+
+    for (const { user: u, diff: udiff } of allUsers) {
+      if (taken.has(u.socketId)) continue;
+
+      let bestCand: QueueUser | null = null;
+      let bestCandDiff: Difficulty | null = null;
+      let bestScore: readonly [number, number, number] | null = null;
+
+      for (const { user: v, diff: dv } of allUsers) {
+        if (v.socketId === u.socketId) continue;
+        if (taken.has(v.socketId)) continue;
+
+        const sc = scoreForPair(u, udiff, v, dv);
+        if (!bestScore || this.tupleIsBetter(sc, bestScore)) {
+          bestScore = sc;
+          bestCand = v;
+          bestCandDiff = dv;
+        }
+      }
+
+      if (bestCand && bestCandDiff) {
+        const removedA = this.removeFromQueueBySocketId(u.socketId);
+        const removedB = this.removeFromQueueBySocketId(bestCand.socketId);
+        if (removedA && removedB) {
+          taken.add(u.socketId);
+          taken.add(bestCand.socketId);
+          const roomId = uuidv4();
+          this.server.to(u.socketId).emit('matched', {
+            roomId,
+            matchedUserId: bestCand.userId,
+            matchedUserPoints: bestCand.totalPoints,
+            yourPoints: u.totalPoints,
+          });
+          this.server.to(bestCand.socketId).emit('matched', {
+            roomId,
+            matchedUserId: u.userId,
+            matchedUserPoints: u.totalPoints,
+            yourPoints: bestCand.totalPoints,
+          });
+          this.logger.log(`Batch matched: ${u.userId} ↔ ${bestCand.userId} (score ${JSON.stringify(bestScore)})`);
+        }
+      }
+    }
+  }
+
+  onModuleInit(): void {
+    const intervalMs = Number(process.env.BATCH_INTERVAL_MS) || 5000;
+    this.logger.log(`[BatchMatching] interval configured: ${intervalMs}ms`);
+    this.batchIntervalId = setInterval(() => {
+      if (this.isBatchRunning) {
+        this.logger.log('[BatchMatching] previous run still active, skipping this interval');
+        return;
+      }
+      this.isBatchRunning = true;
+      try {
+        this.logger.log(`[BatchMatching] running periodic batch matching at ${new Date().toISOString()}`);
+        this.runBatchMatching();
+      } catch (err) {
+        this.logger.error('Error during batch matching:', err as Error);
+      } finally {
+        this.isBatchRunning = false;
+      }
+    }, intervalMs);
+    this.logger.log('Batch matching interval started');
+  }
+
+  onModuleDestroy(): void {
+    if (this.batchIntervalId) {
+      clearInterval(this.batchIntervalId);
+      this.batchIntervalId = null;
+      this.logger.log('Batch matching interval stopped');
+    }
+  }
+
+  @SubscribeMessage('get-queue')
+  handleGetQueue(client: Socket) {
+    const snapshot = {
+      easy: this.queues.easy.map((u) => ({
+        userId: u.userId,
+        topics: u.topics,
+        socketId: u.socketId,
+        enqueuedAt: u.enqueuedAt,
+        totalPoints: u.totalPoints,
+      })),
+      medium: this.queues.medium.map((u) => ({
+        userId: u.userId,
+        topics: u.topics,
+        socketId: u.socketId,
+        enqueuedAt: u.enqueuedAt,
+        totalPoints: u.totalPoints,
+      })),
+      hard: this.queues.hard.map((u) => ({
+        userId: u.userId,
+        topics: u.topics,
+        socketId: u.socketId,
+        enqueuedAt: u.enqueuedAt,
+        totalPoints: u.totalPoints,
+      })),
+    };
+    // keep same event name 'queue-snapshot' so frontend remains compatible
+    client.emit('queue-snapshot', snapshot);
   }
 }

@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { qnJson } from "../../../../lib/qn";
+import { getSession } from "../../../../lib/auth";
+import { supabaseBrowser } from "../../../../utils/supabase/client";
 
 export default function LeaveButton() {
   const [step, setStep] = useState<"none" | "confirm" | "completed">("none");
@@ -26,6 +28,51 @@ export default function LeaveButton() {
             question,
           }),
         });
+      }
+
+      // If user completed the question, update their total_points in Supabase `profile` table.
+      if (completed) {
+        try {
+          // Derive points from difficulty if explicit points not provided.
+          const difficulty = (question?.difficulty || question?.level || '')?.toString()?.toLowerCase() || 'medium';
+          const pointsMap = { easy: 1, medium: 3, hard: 5 } as Record<string, number>;
+          const points = question?.points ?? pointsMap[difficulty] ?? 3;
+
+          // Get logged-in user id from session
+          const session = await getSession();
+          const userId = session?.user?.id ?? null;
+          if (userId) {
+            // Use a Postgres RPC to atomically increment total_points in DB.
+            // This avoids race conditions from concurrent clients. The RPC
+            // `increment_total_points` should be created in your Supabase DB
+            // (see notes below). We pass `p_user_id` and `p_delta`.
+            try {
+              const { data: rpcData, error: rpcError } = await supabaseBrowser.rpc('increment_total_points', {
+                p_user_id: userId,
+                p_delta: Number(points || 0),
+              });
+              if (rpcError) {
+                // If RPC reports error (e.g. profile not found), surface it so
+                // it's visible in logs and (optionally) to the user.
+                throw new Error(rpcError.message || 'increment_total_points RPC error');
+              }
+              // rpcData contains the updated total_points (if the function returns it)
+            } catch (rpcErr) {
+              // Log and show a visible alert — this should not happen in normal operation.
+              // We do not block navigation but we surface the issue.
+              // eslint-disable-next-line no-console
+              console.error('RPC increment_total_points failed', rpcErr);
+              try {
+                if (typeof window !== 'undefined') {
+                  alert('Internal error while updating points. Please contact support.');
+                }
+              } catch {}
+            }
+          }
+        } catch (err) {
+          // don't block navigation for Supabase errors; optionally log for debugging
+          // console.error('Failed to update total_points', err);
+        }
       }
     } catch (e) {
       // swallow errors to avoid blocking navigation
