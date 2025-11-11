@@ -132,7 +132,6 @@ export default function ProfilePage() {
           setLastName={setLastName}
           namePreview={namePreview}
         />
-  {/* Question history removed per request */}
       </div>
     </main>
   );
