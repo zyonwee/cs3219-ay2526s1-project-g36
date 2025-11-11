@@ -197,7 +197,6 @@ export default function RoomPage({ params }: Props) {
                     </span>
                 )}
             </div>
-            {/* Question dropdown is shown inside the left column above the editor */}
 
             {token && (
                 <div className="flex flex-row flex-grow overflow-hidden" style={{ minHeight: 0 }}>
