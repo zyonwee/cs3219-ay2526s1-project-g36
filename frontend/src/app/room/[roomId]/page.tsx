@@ -1,14 +1,13 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { getSession, logout } from "../../../../lib/auth";
 import { useRouter } from "next/navigation";
 import { useRequireAuth } from "../../../../lib/useRequireAuth";
 import ProblemTitle from "../../components/room/ProblemTitle";
-import QuestionPanel from "../../components/room/QuestionPanel";
-import CodeEditorPanel from "../../components/room/CodeEditorPanel";
-import CommentPanel from "../../components/room/CommentPanel";
+import QuestionDropdown from "../../components/room/QuestionDropdown";
 import MonacoCollabTextArea from "../../components/room/MonacoCollabTextArea";
+import EditHistory from "../../components/room/EditHistory";
 import LeaveButton from "../../components/room/LeaveButton";
 import { Session } from "@supabase/supabase-js";
 
@@ -106,9 +105,17 @@ export default function RoomPage({ params }: Props) {
     useEffect(() => {
         if (!partnerId || !session) return;
 
+        const userServiceUrl = process.env.NEXT_PUBLIC_USER_SERVICE_URL;
+        if (!userServiceUrl) {
+            console.warn('NEXT_PUBLIC_USER_SERVICE_URL is not set. profile fetches will fail.');
+            // allow rendering the room even if the user-service URL is missing
+            setLoading(false);
+            return;
+        }
+
         const fetchOwnName = async () => {
             const response = await fetch(
-                `${process.env.NEXT_PUBLIC_USER_SERVICE_URL}/profile/me`,
+                    `${userServiceUrl}/profile/me`,
                 {
                     headers: {
                         Authorization: `Bearer ${session?.access_token}`,
@@ -124,7 +131,7 @@ export default function RoomPage({ params }: Props) {
 
         const fetchPartnerName = async () => {
             const response = await fetch(
-                `${process.env.NEXT_PUBLIC_USER_SERVICE_URL}/profile/username?userId=${partnerId}`,
+                    `${userServiceUrl}/profile/username?userId=${partnerId}`,
                 {
                     headers: {
                         Authorization: `Bearer ${session?.access_token}`,
@@ -141,7 +148,7 @@ export default function RoomPage({ params }: Props) {
         fetchOwnName();
     }, [partnerId, session, ownUserId]);
 
-    if (!roomId || !ok || !ownUserId || !ownName || !partnerName || loading) {
+    if (!roomId || !ok || !ownUserId || loading) {
         return <div className="p-8">Loading room...</div>;
     }
 
@@ -190,36 +197,38 @@ export default function RoomPage({ params }: Props) {
                     </span>
                 )}
             </div>
+
             {token && (
-                <div className="mb-6" style={{ height: "600px" }}>
-                    <MonacoCollabTextArea
-                        roomId={roomId}
-                        token={token}
-                        ownUserId={ownUserId}
-                        ownName={ownName ?? "You"}
-                        partnerName={partnerName ?? "Partner"}
-                    />
+                <div className="flex flex-row flex-grow overflow-hidden" style={{ minHeight: 0 }}>
+                    {/* Left column: question card + editor */}
+                    <div className="flex flex-col flex-grow overflow-hidden" style={{ minHeight: 0 }}>
+                        <div style={{ zIndex: 2 }}>
+                            <QuestionDropdown
+                                title={problem?.title}
+                                description={problem?.description}
+                                difficulty={problem?.difficulty}
+                                acceptanceRate={
+                                    typeof problem?.acceptanceRate === "number"
+                                        ? problem?.acceptanceRate
+                                        : undefined
+                                }
+                            />
+                        </div>
+
+                        <div className="flex-grow h-full overflow-hidden" style={{ minWidth: 300 }}>
+                            <MonacoCollabTextArea roomId={roomId} token={token} ownUserId={ownUserId!} ownName={ownName ?? "You"} partnerName={partnerName ?? "Partner"} showHistory={false} />
+                        </div>
+                    </div>
+
+                    {/* Right column: Edit history (fixed) */}
+                    <div style={{ width: 340, minWidth: 280, marginLeft: 12 }}>
+                        {/* Make the edit history fill the viewport height so it appears to occupy the full right side */}
+                        <div style={{ position: "sticky", top: 0, alignSelf: "start", height: "100vh", overflow: "auto", boxSizing: "border-box", paddingTop: 32 }}>
+                            <EditHistory roomId={roomId} token={token} ownUserId={ownUserId!} ownName={ownName} partnerName={partnerName} />
+                        </div>
+                    </div>
                 </div>
             )}
-            \{/* Comment Panel - Kept for potential future use */}
-            {/* {token && (
-                <div className="grow h-full" style={{ minWidth: "250px" }}>
-                    <CommentPanel roomId={roomId} token={token} />
-                </div>
-            )} */}
-            {/* Question Panel (below editor) */}
-            <div className="mb-8">
-                <QuestionPanel
-                    title={problem?.title}
-                    description={problem?.description}
-                    difficulty={problem?.difficulty}
-                    acceptanceRate={
-                        typeof problem?.acceptanceRate === "number"
-                            ? problem?.acceptanceRate
-                            : undefined
-                    }
-                />
-            </div>
         </main>
     );
 }
