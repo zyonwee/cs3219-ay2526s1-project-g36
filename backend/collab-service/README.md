@@ -1,224 +1,345 @@
+## Table of Contents
+
+- [Overview](#peerprep-collaboration-service)
+- [Architecture Overview](#architecture-overview)
+- [Socket.IO Events](#socketio-namespace--events)
+- [Persistence](#persistence)
+- [Development Notes](#development-notes)
+- [Testing / Linting](#testing--linting)
+- [Related Services](#related-services)
+- [Contributors](#contributors)
+
 # PeerPrep Collaboration Service
 
-A real-time collaboration service built with NestJS and Socket.IO for the PeerPrep platform. This service handles WebSocket connections to enable real-time collaborative features like shared code editing, chat, and synchronization between users in coding sessions.
+A real-time collaborative code editing microservice built with NestJS, Socket.IO, and Yjs. Enables multiple users to edit code simultaneously with conflict-free synchronization, edit history tracking, and persistence.
 
-## Features
+## Architecture Overview
 
-- **WebSocket Gateway**: Real-time bidirectional communication using Socket.IO
-- **JWT Authentication**: Secure token-based authentication with Supabase integration
-- **CORS Support**: Configurable cross-origin resource sharing
-- **Development Test Client**: Built-in HTML test client for easy development and testing
+The Collaboration Service uses **Yjs** (a CRDT library) for conflict-free concurrent editing, **Socket.IO** for real-time WebSocket communication, and **LevelDB** for persistent storage. The architecture consists of:
 
-## Architecture
+- **CollabGateway**: Handles WebSocket connections, authentication, and real-time event routing
+- **CollabService**: Manages Yjs documents, session state, and persistence logic
+- **AuthService**: JWT token verification using Supabase credentials
+- **Burst Manager**: Batches rapid typing changes into consolidated history records
+- **History Combiner**: Merges adjacent edits for cleaner history presentation
+- **LevelDB**: Stores document snapshots, incremental updates, and edit history
 
-The service is structured as follows:
+```mermaid
+graph TB
+    Client[Client Browser] -->|Socket.IO| Gateway[CollabGateway]
+    Gateway -->|Verify JWT| Auth[AuthService]
+    Gateway -->|Document Operations| Service[CollabService]
+    Service -->|Yjs CRDT| Memory[In-Memory Y.Doc]
+    Service -->|Persist| DB[(LevelDB)]
+    Service -->|Load| DB
+    Gateway -->|Broadcast| Clients[Other Clients]
 
-- **CollabGateway** (`src/collab/collab.gateway.ts`): WebSocket gateway handling real-time connections
-- **AuthService** (`src/auth/auth.service.ts`): JWT token verification and user authentication
-- **Test Client** (`test-client/index.html`): Interactive HTML client for testing WebSocket functionality
+    subgraph "Persistence Layer"
+        DB -->|Snapshots| Snap[snapshot:sessionId]
+        DB -->|Updates| Upd[update:sessionId:timestamp]
+        DB -->|History| Hist[history:sessionId:timestamp]
+    end
 
-## Current Implementation
-
-### WebSocket Events
-
-- **Connection**: Authenticates users via JWT token and establishes secure WebSocket connection
-- **`ping`**: Test event that responds with `pong` for connection testing
-- **`collab:connected`**: Confirmation event sent upon successful connection
-- **`collab:error`**: Error event sent when authentication or connection fails
-
-### Authentication
-
-The service supports multiple authentication modes:
-
-- **Production**: Uses `SUPABASE_JWT_SECRET` to verify JWT tokens
-- **Development**: Accepts `dev-test-token` for local testing
-- **Fallback**: Basic JWT decoding when no secret is configured (with warnings)
-
-## Prerequisites
-
-- Node.js (v16 or higher)
-- npm or yarn package manager
-
-## Installation
-
-```bash
-npm install
+    subgraph "Session Management"
+        Service -->|Burst Buffer| Burst[BurstManager]
+        Burst -->|Merge| History[HistoryCombiner]
+        History -->|Emit| Clients
+    end
 ```
 
-## Environment Configuration
+## Tech Stack
 
-Create a `.env` file in the root directory with the following variables:
+| Component          | Technology              | Version     |
+| ------------------ | ----------------------- | ----------- |
+| **Framework**      | NestJS                  | ^10.0.0     |
+| **Runtime**        | Node.js                 | 20 (Alpine) |
+| **WebSocket**      | Socket.IO               | ^4.8.1      |
+| **CRDT Engine**    | Yjs                     | ^13.6.27    |
+| **CRDT Protocols** | y-protocols             | ^1.0.6      |
+| **Database**       | classic-level (LevelDB) | ^3.0.0      |
+| **Authentication** | jsonwebtoken            | ^9.0.2      |
+| **Language**       | TypeScript              | ^5.1.3      |
+| **Testing**        | Jest                    | ^29.5.0     |
 
-```env
-# Server Configuration
-PORT=3000
+## Socket.IO Namespace & Events
 
-# CORS Configuration (comma-separated list of allowed origins)
-CORS_ORIGINS=http://localhost:3001,http://localhost:3002
+**Namespace:** `/collab`
 
-# JWT Authentication (optional for development)
-SUPABASE_JWT_SECRET=your-supabase-jwt-secret
-```
+**Transport:** WebSocket only (polling disabled)
 
-## Running the Service
+### Events Reference
 
-### Development Mode (Recommended)
+| Event                 | Direction       | Description                                                           |
+| --------------------- | --------------- | --------------------------------------------------------------------- |
+| `collab:connected`    | Server → Client | Confirmation of successful connection with `userId` and `sessionId`   |
+| `collab:state`        | Server → Client | Full document state (Yjs encoded) sent on join or after revert        |
+| `collab:language`     | Server → Client | Current programming language for the session                          |
+| `collab:update`       | Client → Server | Incremental Yjs document update from client                           |
+| `collab:update`       | Server → Client | Broadcast of Yjs update to other clients in session                   |
+| `collab:awareness`    | Client → Server | Awareness update (cursor position, selection, user info)              |
+| `collab:awareness`    | Server → Client | Broadcast of awareness data to other clients                          |
+| `collab:history:get`  | Client → Server | Request edit history with optional `limit` parameter                  |
+| `collab:history`      | Server → Client | Array of `EditHistoryRecord` objects                                  |
+| `collab:history:new`  | Server → Client | Real-time broadcast of new merged edit record                         |
+| `collab:language:set` | Client → Server | Set programming language (`python`, `javascript`, `java`, `cpp`, `c`) |
+| `collab:revert`       | Client → Server | Revert document to specific `timestamp`                               |
+| `collab:listAllRooms` | Client → Server | Debug: List all active Socket.IO rooms                                |
+| `collab:roomDetails`  | Server → Client | Debug: Room membership details                                        |
+| `collab:error`        | Server → Client | Error message with `ok: false` and `message`                          |
 
-```bash
-npm run start:dev
-```
+### Connection Handshake
 
-This starts the service in watch mode on `http://localhost:3000` with hot-reload enabled.
+Clients must provide authentication data in the handshake:
 
-### Other Run Modes
-
-```bash
-# Standard development
-npm run start
-
-# Debug mode
-npm run start:debug
-
-# Production mode
-npm run start:prod
-```
-
-## Testing the Service
-
-### Method 1: Using the Built-in Test Client (Recommended)
-
-1. Start the service in development mode:
-
-   ```bash
-   npm run start:dev
-   ```
-
-2. Open the test client in your browser:
-   - Navigate to the `test-client` folder
-   - Open `index.html` in any modern web browser
-   - The test client will automatically connect to `http://localhost:3002`
-
-3. Test the connection:
-   - The client will attempt to connect using the `dev-test-token`
-   - You should see a "Connected" status
-   - Click "Send Ping" to test the ping/pong functionality
-   - Check the log area for real-time message updates
-
-### Method 2: Using JavaScript/Browser Console
-
-```javascript
-// Connect to the WebSocket
+```typescript
 const socket = io('http://localhost:3002/collab', {
   transports: ['websocket'],
   auth: {
-    token: 'dev-test-token', // or your actual JWT token
+    token: '<JWT_TOKEN>', // Supabase JWT
+    sessionId: '<SESSION_ID>', // Collaboration room ID
   },
-});
-
-// Listen for connection confirmation
-socket.on('collab:connected', (data) => {
-  console.log('Connected:', data);
-});
-
-// Send a test ping
-socket.emit('ping', { message: 'Hello from client!' });
-
-// Listen for pong response
-socket.on('pong', (data) => {
-  console.log('Received pong:', data);
-});
-
-// Handle errors
-socket.on('collab:error', (error) => {
-  console.error('Connection error:', error);
 });
 ```
 
-### Method 3: Using a WebSocket Testing Tool
+## Getting Started
 
-You can use tools like:
+### Prerequisites
 
-- **Postman** (WebSocket support)
-- **WebSocket King** browser extension
-- **wscat** command-line tool
+- **Node.js** 20 or higher
+- **npm** 9 or higher
+- **Docker** (optional, for containerized deployment)
 
-Connection details:
+### Installation
 
-- **URL**: `ws://localhost:3002/collab`
-- **Namespace**: `/collab`
-- **Auth**: Include `token` in the auth object during handshake
+```bash
+# Navigate to the collab-service directory
+cd backend/collab-service
+
+# Install dependencies
+npm install
+```
+
+### Running Locally
+
+```bash
+# Development mode with hot-reload
+npm run start:dev
+
+# Production mode
+npm run build
+npm run start:prod
+
+# Debug mode
+npm run start:debug
+```
+
+The service will start on **port 3002** by default (configurable via `PORT` environment variable).
+
+### Running via Docker Compose
+
+From the `backend/` directory:
+
+```bash
+# Build and start all services
+docker-compose up --build
+
+# Start collab service only
+docker-compose up collab
+
+# Run in background
+docker-compose up -d collab
+```
+
+The service is exposed on **host port 3002**, mapped to container port 3000.
+
+### Port Configuration
+
+- **Default port**: 3002 (configurable via `PORT` env var)
+- **Docker container**: Runs on port 3000 internally, exposed as 3002 on host
+- **Health check endpoint**: `http://localhost:3002/health`
+
+## Environment Variables
+
+Create a `.env` file in `backend/collab-service/`:
+
+```env
+# Server Configuration
+PORT=3002
+NODE_ENV=development
+
+# CORS Configuration
+# Comma-separated list of allowed origins
+CORS_ORIGINS=http://localhost:3000,http://localhost:3001
+
+# Authentication
+# Supabase JWT secret for token verification
+SUPABASE_JWT_SECRET=your_supabase_jwt_secret_here
+
+# Persistence
+# Path to LevelDB storage directory
+COLLAB_SERVICE_PATH=./collab-level-db
+```
+
+### Environment Variable Details
+
+| Variable              | Required | Default       | Description                               |
+| --------------------- | -------- | ------------- | ----------------------------------------- |
+| `PORT`                | No       | 3002          | HTTP/WebSocket server port                |
+| `CORS_ORIGINS`        | No       | _(allow all)_ | Comma-separated allowed origins           |
+| `SUPABASE_JWT_SECRET` | **Yes**  | —             | Secret key for JWT verification (HS256)   |
+| `COLLAB_SERVICE_PATH` | **Yes**  | —             | Directory path for LevelDB database files |
+
+## Persistence
+
+### Storage Engine
+
+The service uses **LevelDB** (via `classic-level`) for persistent storage. LevelDB is a fast key-value store that provides:
+
+- Ordered key iteration
+- Atomic batch operations
+- Compression
+- Crash recovery
+
+### Data Model
+
+Three types of keys are stored:
+
+#### 1. Snapshots
+
+**Key:** `snapshot:<sessionId>`  
+**Value:** Full Yjs document state (Uint8Array)  
+**Purpose:** Periodic snapshots for faster loading
+
+#### 2. Updates
+
+**Key:** `update:<sessionId>:<timestamp>:<random>`  
+**Value:** Incremental Yjs update (Uint8Array)  
+**Purpose:** Track all document changes since last snapshot
+
+#### 3. History
+
+**Key:** `history:<sessionId>:<timestamp>:<random>`  
+**Value:** JSON-encoded `EditHistoryRecord`  
+**Purpose:** Human-readable edit history with user attribution
+
+### Persistence Strategy
+
+- **Snapshot interval**: Every **30 seconds** or **200 operations** (configurable)
+- **Update pruning**: Updates older than **60 seconds** are deleted after snapshotting
+- **History merging**: Adjacent edits within **1.2 seconds** by the same user are combined
+- **Burst buffering**: Rapid typing is batched with **1 second** pause threshold
+
+### Database Location
+
+- **Local development**: `./collab-level-db/` (relative to service root)
+- **Docker deployment**: Mounted to `./collab-level-db/` on host, mapped to `/data/leveldb` in container
 
 ## Development Notes
 
-### Authentication Modes
-
-1. **Development Mode**: Use `dev-test-token` as the authentication token
-2. **Production Mode**: Set `SUPABASE_JWT_SECRET` and use valid JWT tokens
-3. **Fallback Mode**: The service will decode JWT tokens without verification (shows warnings)
-
-### WebSocket Namespace
-
-The service uses the `/collab` namespace for all WebSocket connections. Make sure your client connects to the correct namespace.
-
-### CORS Configuration
-
-Configure `CORS_ORIGINS` in your `.env` file to allow connections from your frontend applications.
-
-## Project Structure
+### Project Structure
 
 ```
 src/
+├── main.ts                    # Application entry point, CORS, port config
+├── app.module.ts              # Root module, imports CollabModule
+├── app.controller.ts          # Basic app controller
+├── app.service.ts             # Basic app service
+├── health/
+│   └── health.controller.ts   # Health check endpoint (/health)
 ├── auth/
-│   └── auth.service.ts          # JWT authentication service
-├── collab/
-│   ├── collab.gateway.ts        # WebSocket gateway
-│   └── collab.module.ts         # Collaboration module
-├── app.controller.ts            # Basic HTTP controller
-├── app.module.ts               # Main application module
-├── app.service.ts              # Basic application service
-└── main.ts                     # Application entry point
-
-test-client/
-└── index.html                  # Interactive test client
+│   └── auth.service.ts        # JWT verification with Supabase
+└── collab/
+    ├── collab.module.ts       # Collaboration module definition
+    ├── collab.gateway.ts      # Socket.IO gateway, event handlers
+    ├── collab.service.ts      # Core Yjs document management
+    ├── types.ts               # TypeScript interfaces
+    ├── helpers.ts             # Constants, utility functions
+    ├── burst-manager.ts       # Real-time edit batching
+    └── history-combiner.ts    # History merging algorithms
 ```
 
-## Available Scripts
+### Key Configuration Constants
+
+Defined in `src/collab/helpers.ts`:
+
+```typescript
+TYPE_BURST_MS = 1000; // Typing pause threshold (1s)
+MAX_BURST_MS = 5000; // Maximum burst duration (5s)
+SNAPSHOT_INTERVAL_MS = 30000; // Snapshot interval (30s)
+OPERATIONS_THRESHOLD = 200; // Operations before snapshot
+PRUNE_THRESHOLD_MS = 60000; // Update retention (1m)
+MAX_SNIPPET_LENGTH = 120; // Max chars in history snippets
+MERGE_WINDOW_MS = 1200; // History merge window (1.2s)
+ALLOWED_LANGUAGES = ['python', 'javascript', 'java', 'cpp', 'c'];
+```
+
+### Rate Limiting & Optimization
+
+- **Burst buffering**: Groups rapid edits to reduce history clutter
+- **Snapshot strategy**: Balances memory and disk usage
+- **Prune old updates**: Keeps database size manageable
+- **History merging**: Combines adjacent single-character edits
+
+### Logging
+
+Uses NestJS built-in logger:
+
+```typescript
+this.log.log('Loaded snapshot for session ${sessionId}');
+this.log.error('Failed to apply update: ${error}');
+```
+
+### Revert Mechanism
+
+The service supports time-travel debugging via `collab:revert`:
+
+1. **Hard revert** (implemented): Rebuilds document from updates up to timestamp, prunes forward history
+
+## Testing / Linting
 
 ```bash
-# Development
-npm run start:dev              # Start in watch mode
-npm run start:debug            # Start in debug mode
+# Run unit tests
+npm run test
 
-# Testing
-npm run test                   # Run unit tests
-npm run test:e2e              # Run end-to-end tests
-npm run test:cov              # Run tests with coverage
+# Run tests in watch mode
+npm run test:watch
 
-# Building
-npm run build                 # Build the application
-npm run start:prod            # Run built application
+# Generate coverage report
+npm run test:cov
 
-# Code Quality
-npm run lint                  # Run ESLint
-npm run format                # Format code with Prettier
+# Run e2e tests
+npm run test:e2e
+
+# Run linter
+npm run lint
+
+# Format code
+npm run format
 ```
 
-## Troubleshooting
+### Test Configuration
 
-### Connection Issues
+- **Framework**: Jest
+- **Config**: `jest` section in `package.json`
+- **E2E config**: `test/jest-e2e.json`
+- **Coverage**: Saved to `coverage/` directory
 
-- Ensure the service is running on the correct port (default: 3002)
-- Check CORS configuration if connecting from a web browser
-- Verify that WebSocket transports are enabled in your client
+## Related Services
 
-### Authentication Issues
+The Collaboration Service is part of the **PeerPrep** microservices architecture:
 
-- For development, use `dev-test-token` as the token
-- For production, ensure `SUPABASE_JWT_SECRET` is correctly configured
-- Check the console logs for authentication error details
+| Service              | Port | Purpose                                |
+| -------------------- | ---- | -------------------------------------- |
+| **Matching Service** | 3001 | Pairs users for collaborative sessions |
+| **Collab Service**   | 3002 | Real-time code editing (this service)  |
+| **Question Service** | 3000 | Manages coding questions and attempts  |
+| **User Service**     | 4001 | User authentication and profiles       |
 
-### Common Error Messages
+All services communicate via HTTP/WebSocket and share Supabase JWT tokens for authentication.
 
-- **"Missing token"**: Include a token in the auth object during connection
-- **"Invalid token"**: Token verification failed - check your token or secret
-- **"Connection failed"**: Check if the service is running and accessible
+## Contributors
+
+| Name         | Role                 |
+| ------------ | -------------------- |
+| David Vicedo | Lead Developer       |
+| Amos Chee    | Frontend Integration |
